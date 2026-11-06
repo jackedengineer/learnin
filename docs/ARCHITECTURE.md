@@ -55,7 +55,7 @@ Plain-language companion: [OVERVIEW.md](./OVERVIEW.md) · Competitor: [hands-on 
 | Retrieval | **Qdrant hybrid (dense + BM25 [+ image]) → RRF → Voyage rerank → parent expansion → cited generation** | The standard production recipe, measured stage by stage |
 | Observability | Workers Logs/Traces (OTel export), **Langfuse** for LLM traces, **Sentry** (`@sentry/cloudflare`, RN, web) | You can't improve a RAG system you can't see |
 | Quality | **Eval harness from day 1**, gated in CI on Neon preview branches | This separates "production-grade AI" from a demo |
-| Auth | **Better Auth** (Drizzle adapter on Neon, Expo integration) | Self-hosted and TS-native, and you learn the auth layer |
+| Auth | **Better Auth, Google sign-in only** (Drizzle adapter on Neon, Expo plugin) | No passwords to store, reset or leak. Self-hosted and TS-native (§6.4) |
 
 ---
 
@@ -611,6 +611,23 @@ event: error                data: {"code":"llm.overloaded", "retryable":true}
 Web: `fetch` + stream reader. Mobile: **`expo/fetch`** (supports streaming bodies). One parser in `packages/api-client`. If the client disconnects, generation still completes (`ctx.waitUntil`) and is persisted.
 
 ---
+
+### 6.4 Authentication: Better Auth + Google only
+
+**Decision:** one sign-in method, **Sign in with Google**. No email/password, magic links or other providers in v1.
+
+| Piece | Setup |
+|---|---|
+| Server | Better Auth mounted in the Hono Worker at `/v1/auth/*`. Drizzle adapter → Neon (tables `user`, `session`, `account`, `verification`, created by Better Auth's schema generator and owned by `packages/db` migrations). `socialProviders.google` with `clientId` / `clientSecret` from Worker secrets. **Email/password disabled** |
+| Google Cloud | One OAuth client per platform: **Web** (redirect `https://<app-domain>/v1/auth/callback/google`), **iOS** and **Android** (for native ID-token sign-in). Scopes: `openid email profile` only, so consent-screen verification stays light. Add Drive or other scopes later only if a feature needs them, with incremental consent |
+| Web | Same-origin SPA, so sessions are **HttpOnly, Secure, SameSite=Lax cookies** set by Better Auth. CSRF is covered by SameSite + Better Auth's origin checks. `trustedOrigins` lists the app domain |
+| Mobile (Expo) | `@better-auth/expo` client plugin. Preferred: **native Google Sign-In** returns an ID token → `signIn.social({ provider: 'google', idToken })`, a one-tap native sheet with no browser hop. Fallback: the OAuth redirect flow in an auth session browser with the app scheme (`learnin://`) in `trustedOrigins`. Session token is kept in **`expo-secure-store`** and sent as a bearer/cookie header by the plugin |
+| Sessions | Database-backed sessions (revocable), 30-day sliding expiry, `cookieCache` for a few minutes to avoid a Neon read on every request. Session lookup happens in a Hono middleware that sets `c.var.user`. Every downstream query takes `userId` from there (§9) |
+| Account model | `user.id` (UUIDv7) is the tenant key used in Postgres RLS and Qdrant's `user_id` payload. The Google `sub` lives in `account.accountId`, and email is informational. On first sign-in, a hook creates the `learner_profile` row and triggers the onboarding prompts (goal, level) |
+| Allow-list (personal phase) | A `ALLOWED_EMAILS` Worker variable checked in Better Auth's `before` hook. Only you (and later invited friends) can create accounts. Remove it to open sign-ups |
+| Account deletion | `DELETE /v1/me` → soft-delete, a Workflow purges R2 objects, Qdrant points (filter `user_id`) and Postgres rows. Required by app-store policy for apps with sign-in |
+
+Not needed with Google-only: password hashing, reset emails, email verification, and an email-sending service.
 
 ## 7. Evaluation (unchanged in substance)
 

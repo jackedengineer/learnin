@@ -42,6 +42,7 @@ Think of the system as a small, very fast library with a tutor on staff.
 
 ### Journey 1: "I want to learn transformers"
 
+0. First time only: **Sign in with Google**, a one-tap native sheet on the phone and a standard Google popup on the web. No passwords. The app then asks your goal and level once, to set up your learner profile.
 1. You tap **New notebook**, name it *Transformers from scratch*, and answer two quick prompts: *What's your goal?* ("understand the paper well enough to implement it") and *Your level?* ("comfortable with Python and basic linear algebra").
 2. The app saves this to Postgres. These answers shape **every** explanation in this notebook. The tutor is told your goal and level each time.
 
