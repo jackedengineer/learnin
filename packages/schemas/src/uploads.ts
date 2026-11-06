@@ -1,29 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { Id, Timestamp } from "./common.ts";
-
-export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
-
-/** Declared MIME allow-list. The server re-checks magic bytes on completion. */
-export const UPLOAD_MIME_TYPES = [
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "video/mp4",
-  "video/quicktime",
-  "video/webm",
-  "audio/mpeg",
-  "audio/mp4",
-  "audio/x-m4a",
-  "audio/wav",
-  "audio/webm",
-  "text/plain",
-  "text/markdown",
-  "text/vtt",
-  "application/x-subrip",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-] as const;
+import { MAX_UPLOAD_BYTES, UPLOAD_MIME_TYPES } from "./constants.ts";
 
 export const CreateUploadInput = z
   .strictObject({

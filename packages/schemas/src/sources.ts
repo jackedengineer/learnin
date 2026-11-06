@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { Id, page, Timestamp } from "./common.ts";
+import { MAX_PASTED_TEXT_CHARS } from "./constants.ts";
 
 export const SourceKind = z
   .enum(["pdf", "image", "video", "audio", "transcript", "youtube", "web", "text", "docx"])
@@ -33,8 +34,6 @@ export type Source = z.infer<typeof Source>;
 export const SourcePage = page(Source, "SourcePage");
 
 const OptionalTitle = z.string().trim().min(1).max(300).optional();
-
-export const MAX_PASTED_TEXT_CHARS = 500_000;
 
 export const CreateSourceInput = z
   .discriminatedUnion("type", [

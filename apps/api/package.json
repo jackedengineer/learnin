@@ -4,14 +4,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./types": "./src/app.ts"
+    "./types": "./dist-types/apps/api/src/app.d.ts"
   },
   "scripts": {
     "dev": "mkdir -p ../web/dist && wrangler dev --port 8787",
     "deploy": "wrangler deploy --env production",
     "types": "wrangler types --env-interface CloudflareBindings",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.types.json"
   },
   "dependencies": {
     "@doubtless/db": "workspace:*",

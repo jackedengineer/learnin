@@ -1,0 +1,22 @@
+{
+  "name": "@doubtless/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@doubtless/schemas": "workspace:*",
+    "hono": "4.13.16"
+  },
+  "devDependencies": {
+    "@doubtless/api": "workspace:*",
+    "typescript": "~6.0.3",
+    "vitest": "5.1.0"
+  }
+}
