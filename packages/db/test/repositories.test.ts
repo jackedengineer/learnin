@@ -26,7 +26,7 @@ describe("pagination cursors", () => {
     };
     expect(decodeCursor(encodeCursor(c))).toEqual(c);
     expect(decodeCursor("not-a-cursor")).toBeNull();
-    expect(decodeCursor(Buffer.from('["x","y"]').toString("base64url"))).toBeNull();
+    expect(decodeCursor(btoa('["x","y"]'))).toBeNull();
   });
 });
 

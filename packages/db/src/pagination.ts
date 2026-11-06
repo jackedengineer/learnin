@@ -1,13 +1,23 @@
 /** Opaque keyset cursor over (created_at DESC, id DESC) — ADR-0001. */
 export type Cursor = { createdAt: Date; id: string };
 
+const toB64Url = (s: string) =>
+  btoa(String.fromCharCode(...new TextEncoder().encode(s)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+const fromB64Url = (s: string) =>
+  new TextDecoder().decode(
+    Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0)),
+  );
+
 export function encodeCursor(c: Cursor): string {
-  return Buffer.from(JSON.stringify([c.createdAt.toISOString(), c.id])).toString("base64url");
+  return toB64Url(JSON.stringify([c.createdAt.toISOString(), c.id]));
 }
 
 export function decodeCursor(raw: string): Cursor | null {
   try {
-    const parsed: unknown = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+    const parsed: unknown = JSON.parse(fromB64Url(raw));
     if (!Array.isArray(parsed) || parsed.length !== 2) return null;
     const [ts, id] = parsed;
     if (typeof ts !== "string" || typeof id !== "string") return null;
