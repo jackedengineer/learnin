@@ -24,8 +24,10 @@ export async function uploadTarget(
     `https://${config.r2.accountId}.r2.cloudflarestorage.com/${config.r2.bucket}/${upload.storageKey}`,
   );
   url.searchParams.set("X-Amz-Expires", String(expiresInSeconds));
+  // allHeaders: sign content-type too, so the URL can't be reused to store another type.
+  // (Size can't be bound by a presigned PUT; completion re-checks it and pins the etag.)
   const signed = await client.sign(new Request(url, { method: "PUT", headers }), {
-    aws: { signQuery: true },
+    aws: { signQuery: true, allHeaders: true },
   });
   return { url: signed.url, headers };
 }
@@ -56,7 +58,12 @@ export function sniffMime(bytes: Uint8Array, declared: string): string | null {
   if (ascii(0, "ID3") || at(0, [0xff, 0xfb]) || at(0, [0xff, 0xf3]) || at(0, [0xff, 0xf2]))
     return "audio/mpeg";
   if (at(0, [0x50, 0x4b, 0x03, 0x04])) {
-    return declared === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    // A .docx is a ZIP whose first entries include [Content_Types].xml and word/… parts.
+    // (Decompression limits are enforced by the ingestion pipeline, not here.)
+    const head = new TextDecoder("latin1").decode(bytes);
+    const isDocx = head.includes("[Content_Types].xml") || head.includes("word/");
+    return isDocx &&
+      declared === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       ? declared
       : null;
   }
@@ -69,17 +76,25 @@ export function sniffMime(bytes: Uint8Array, declared: string): string | null {
   return null;
 }
 
+const TEXT_SAMPLE = 4000;
+
 function isProbablyText(bytes: Uint8Array): boolean {
   if (bytes.length === 0) return false;
-  try {
-    new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
-      bytes.slice(0, Math.min(bytes.length, 4000)),
-    );
-  } catch {
-    // A multi-byte char cut at the sample boundary is fine; anything else is binary.
-    if (bytes.length < 4000) return false;
+  const sample = bytes.slice(0, Math.min(bytes.length, TEXT_SAMPLE));
+  if (sample.includes(0)) return false;
+  // Must be valid UTF-8, except that a sample cut mid-character may end with ≤3 stray bytes.
+  const truncated = bytes.length > TEXT_SAMPLE;
+  for (let trim = 0; trim <= (truncated ? 3 : 0); trim++) {
+    try {
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
+        sample.slice(0, sample.length - trim),
+      );
+      return true;
+    } catch {
+      // try trimming one more byte
+    }
   }
-  return !bytes.slice(0, 4000).includes(0);
+  return false;
 }
 
 export function kindForMime(mime: string): SourceKind | null {

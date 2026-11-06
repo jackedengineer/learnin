@@ -1,5 +1,5 @@
 import { uploadRepo } from "@doubtless/db";
-import { CreateUploadInput, IdParam, Upload, UploadTicket } from "@doubtless/schemas";
+import { CreateUploadInput, Id, IdParam, Upload, UploadTicket } from "@doubtless/schemas";
 import { createRoute } from "@hono/zod-openapi";
 import { createRouter, errorResponses } from "../lib/openapi.ts";
 import { ApiError, notFound } from "../lib/problem.ts";
@@ -7,8 +7,10 @@ import { toUpload } from "../lib/serialize.ts";
 import { isCompatible, sniffMime, uploadTarget } from "../lib/storage.ts";
 
 const tags = ["Uploads"];
-const TICKET_TTL_SECONDS = 15 * 60;
+const TICKET_TTL_SECONDS = 10 * 60;
 const SNIFF_BYTES = 4096;
+/** Abuse guard: each ticket can store an object, so cap unfinished uploads per user. */
+const MAX_PENDING_UPLOADS_PER_HOUR = 30;
 
 const create = createRoute({
   method: "post",
@@ -42,6 +44,15 @@ const complete = createRoute({
 export const uploadsRouter = createRouter()
   .openapi(create, async (c) => {
     const input = c.req.valid("json");
+    if (
+      (await uploadRepo.countRecentPending(c.var.db, c.var.user.id)) >= MAX_PENDING_UPLOADS_PER_HOUR
+    ) {
+      throw new ApiError(
+        429,
+        "upload.rate_limited",
+        "Too many unfinished uploads; try again later",
+      );
+    }
     const expiresAt = new Date(Date.now() + TICKET_TTL_SECONDS * 1000);
     const up = await uploadRepo.create(c.var.db, c.var.user.id, {
       filename: input.filename,
@@ -66,6 +77,9 @@ export const uploadsRouter = createRouter()
     const up = await uploadRepo.get(c.var.db, userId, c.req.valid("param").id);
     if (!up) throw notFound("upload");
     if (up.status !== "pending") return c.json(toUpload(up), 200); // idempotent
+    if (up.expiresAt.getTime() < Date.now()) {
+      throw new ApiError(410, "upload.expired", "Upload ticket expired; start a new upload");
+    }
     const head = await c.env.UPLOADS.head(up.storageKey);
     if (!head) throw new ApiError(409, "upload.not_received", "The file has not been uploaded yet");
     if (head.size !== up.declaredSize) {
@@ -76,10 +90,17 @@ export const uploadsRouter = createRouter()
         "Uploaded size does not match the declared size",
       );
     }
+    // Sniff the SAME object version we sized (etag precondition), then bind the upload to that
+    // etag: anything written to the key later (a racing PUT, a reused presigned URL) has a
+    // different etag and is rejected by every reader, which must use onlyIf.etagMatches.
     const obj = await c.env.UPLOADS.get(up.storageKey, {
       range: { offset: 0, length: SNIFF_BYTES },
+      onlyIf: { etagMatches: head.etag },
     });
-    const bytes = obj ? new Uint8Array(await obj.arrayBuffer()) : new Uint8Array();
+    if (!obj || !("arrayBuffer" in obj)) {
+      throw new ApiError(409, "upload.changed", "The file changed while being verified; retry");
+    }
+    const bytes = new Uint8Array(await obj.arrayBuffer());
     const detected = sniffMime(bytes, up.declaredMime);
     if (!detected || !isCompatible(up.declaredMime, detected)) {
       await c.env.UPLOADS.delete(up.storageKey);
@@ -93,6 +114,7 @@ export const uploadsRouter = createRouter()
       byteSize: head.size,
       detectedMime: detected,
       sha256: null, // computed by the ingestion pipeline (Phase 1), which reads the whole file anyway
+      etag: head.etag,
     });
     if (!done) throw new ApiError(409, "upload.state_changed", "Upload state changed; retry");
     return c.json(toUpload(done), 200);
@@ -104,7 +126,9 @@ export const uploadsRouter = createRouter()
  */
 export const uploadContentRouter = createRouter().put("/:id/content", async (c) => {
   if (c.var.config.uploadMode !== "worker") throw notFound("route");
-  const up = await uploadRepo.get(c.var.db, c.var.user.id, c.req.param("id"));
+  const id = Id.safeParse(c.req.param("id"));
+  if (!id.success) throw notFound("upload");
+  const up = await uploadRepo.get(c.var.db, c.var.user.id, id.data);
   if (!up) throw notFound("upload");
   if (up.status !== "pending")
     throw new ApiError(409, "upload.already_completed", "Upload already completed");

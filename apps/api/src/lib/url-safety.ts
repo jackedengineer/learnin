@@ -18,7 +18,12 @@ export function assertPublicHttpUrl(raw: string): URL {
   if (url.username || url.password) throw invalid("URLs with credentials are not allowed");
   if (url.port && url.port !== "80" && url.port !== "443")
     throw invalid("Non-standard ports are not allowed");
-  const host = url.hostname.toLowerCase();
+  // A trailing dot is the same name as without it ("localhost." === "localhost"); normalise
+  // first so suffix checks can't be bypassed, and reject empty labels outright.
+  let host = url.hostname.toLowerCase();
+  if (host.endsWith(".")) host = host.slice(0, -1);
+  if (!host || host.endsWith(".") || host.includes("..")) throw invalid("Invalid hostname");
+  url.hostname = host;
   if (host === "localhost" || BLOCKED_HOST_SUFFIXES.some((s) => host.endsWith(s))) {
     throw invalid("Private hostnames are not allowed");
   }
@@ -34,9 +39,13 @@ export function assertPublicHttpUrl(raw: string): URL {
 export function youTubeVideoId(url: URL): string | null {
   if (!isYouTubeUrl(url)) return null;
   const h = url.hostname.replace(/^www\.|^m\./, "");
-  if (h === "youtu.be") return url.pathname.slice(1).split("/")[0] || null;
-  if (url.pathname === "/watch") return url.searchParams.get("v");
-  return url.pathname.split("/")[2] || null;
+  const raw =
+    h === "youtu.be"
+      ? url.pathname.slice(1).split("/")[0]
+      : url.pathname === "/watch"
+        ? url.searchParams.get("v")
+        : url.pathname.split("/")[2];
+  return raw && /^[A-Za-z0-9_-]{6,20}$/.test(raw) ? raw : null;
 }
 
 export function isYouTubeUrl(url: URL): boolean {

@@ -4,6 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { DbFactory } from "./lib/context.ts";
+import { isDeletedUserViolation, safeErrorForLog } from "./lib/errors.ts";
 import { requestContext, requireSession, services } from "./lib/middleware.ts";
 import { createRouter } from "./lib/openapi.ts";
 import { ApiError, problemResponse } from "./lib/problem.ts";
@@ -52,6 +53,16 @@ export function createApp(deps: { dbFactory?: DbFactory } = {}) {
       },
     })(c, next);
   });
+  // Defence in depth on top of SameSite=Lax cookies and JSON-only bodies: a browser
+  // request that declares a foreign Origin may not mutate anything. (Native apps send no Origin.)
+  app.use("/v1/*", async (c, next) => {
+    const origin = c.req.header("origin");
+    const safe = c.req.method === "GET" || c.req.method === "HEAD" || c.req.method === "OPTIONS";
+    if (!safe && origin && !c.var.config.trustedOrigins.includes(origin)) {
+      throw new ApiError(403, "request.forbidden_origin", "Cross-origin request refused");
+    }
+    return next();
+  });
   app.use("/v1/*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
     if (PUBLIC_PREFIXES.some((p) => path === p || path.startsWith(p))) return next();
@@ -99,15 +110,15 @@ export function createApp(deps: { dbFactory?: DbFactory } = {}) {
       const code = status === 400 ? "request.malformed" : `http.${status}`;
       return problemResponse(c, new ApiError(status, code, err.message || "Bad request"));
     }
+    if (isDeletedUserViolation(err)) {
+      return problemResponse(c, new ApiError(401, "auth.required", "Sign in required"));
+    }
     console.error(
       JSON.stringify({
         level: "error",
         msg: "unhandled_error",
         requestId: c.get("requestId"),
-        error:
-          err instanceof Error
-            ? { name: err.name, message: err.message, stack: err.stack }
-            : String(err),
+        error: safeErrorForLog(err),
       }),
     );
     return problemResponse(c, new ApiError(500, "internal", "Internal server error"));

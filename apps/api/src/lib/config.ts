@@ -21,6 +21,15 @@ const ConfigSchema = z
     if (c.ENVIRONMENT === "production" && c.ALLOW_DEV_LOGIN === "true") {
       ctx.addIssue({ code: "custom", message: "ALLOW_DEV_LOGIN must be false in production" });
     }
+    if (
+      c.ALLOW_DEV_LOGIN === "true" &&
+      !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(c.BETTER_AUTH_URL)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "ALLOW_DEV_LOGIN is only allowed for a localhost BETTER_AUTH_URL",
+      });
+    }
     if (c.ENVIRONMENT === "production" && (!c.GOOGLE_CLIENT_ID || !c.GOOGLE_CLIENT_SECRET)) {
       ctx.addIssue({
         code: "custom",

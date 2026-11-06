@@ -1,4 +1,4 @@
-import { newId, notebookRepo, sourceRepo, uploadRepo } from "@doubtless/db";
+import { type NewSource, newId, notebookRepo, sourceRepo, uploadRepo } from "@doubtless/db";
 import {
   CreateSourceInput,
   Id,
@@ -98,6 +98,7 @@ const remove = createRoute({
 const titleFromUrl = (u: URL) => {
   const videoId = youTubeVideoId(u);
   if (videoId) return `YouTube video ${videoId}`;
+  if (isYouTubeUrl(u)) return "YouTube video";
   return `${u.hostname.replace(/^www\./, "")}${u.pathname === "/" ? "" : u.pathname}`.slice(0, 300);
 };
 
@@ -116,37 +117,48 @@ export const sourcesRouter = createRouter()
     const userId = c.var.user.id;
     const { notebookId } = c.req.valid("param");
     const input = c.req.valid("json");
-    if (!(await notebookRepo.get(c.var.db, userId, notebookId))) throw notFound("notebook");
-
-    let source: Awaited<ReturnType<typeof sourceRepo.create>>;
+    // Side effects outside the DB (URL vetting, writing pasted text) happen first; the
+    // ownership check, upload consumption and insert then commit atomically while the
+    // notebook row is locked FOR SHARE, so a concurrent delete can't orphan the source.
+    let prepared: Omit<
+      NewSource,
+      "id" | "userId" | "createdAt" | "updatedAt" | "deletedAt"
+    > | null = null;
     if (input.type === "url") {
       const url = assertPublicHttpUrl(input.url);
-      source = await sourceRepo.create(c.var.db, userId, {
+      prepared = {
         notebookId,
         kind: isYouTubeUrl(url) ? "youtube" : "web",
         title: input.title ?? titleFromUrl(url),
         originUrl: url.toString(),
         addedVia: "url",
-      });
+      };
     } else if (input.type === "text") {
+      if (!(await notebookRepo.get(c.var.db, userId, notebookId))) throw notFound("notebook");
       const storageKey = `sources/${userId}/${newId()}.txt`;
       const bytes = new TextEncoder().encode(input.text);
-      await c.env.UPLOADS.put(storageKey, bytes, {
+      const put = await c.env.UPLOADS.put(storageKey, bytes, {
         httpMetadata: { contentType: "text/plain; charset=utf-8" },
       });
-      source = await sourceRepo.create(c.var.db, userId, {
+      prepared = {
         notebookId,
         kind: "text",
         title: input.title,
         storageKey,
+        storageEtag: put?.etag ?? null,
         mime: "text/plain",
         byteSize: bytes.byteLength,
         addedVia: "paste",
-      });
-    } else {
-      const upload = await uploadRepo.consume(c.var.db, userId, input.uploadId);
+      };
+    }
+
+    const source = await c.var.db.transaction(async (tx) => {
+      if (!(await notebookRepo.lockLive(tx, userId, notebookId))) throw notFound("notebook");
+      if (prepared) return sourceRepo.create(tx, userId, prepared);
+      if (input.type !== "upload") throw new Error("unreachable");
+      const upload = await uploadRepo.consume(tx, userId, input.uploadId);
       if (!upload) {
-        const existing = await uploadRepo.get(c.var.db, userId, input.uploadId);
+        const existing = await uploadRepo.get(tx, userId, input.uploadId);
         if (!existing) throw notFound("upload");
         throw new ApiError(
           409,
@@ -157,17 +169,18 @@ export const sourcesRouter = createRouter()
       const mime = upload.detectedMime ?? upload.declaredMime;
       const kind = kindForMime(mime);
       if (!kind) throw new ApiError(422, "source.unsupported_type", "Unsupported file type");
-      source = await sourceRepo.create(c.var.db, userId, {
+      return sourceRepo.create(tx, userId, {
         notebookId,
         kind,
         title: input.title ?? upload.filename,
         uploadId: upload.id,
         storageKey: upload.storageKey,
+        storageEtag: upload.etag,
         mime,
         byteSize: upload.byteSize,
         addedVia: "upload",
       });
-    }
+    });
     // Phase 1: start the IngestSource workflow here (ARCHITECTURE §4.1).
     return c.json(toSource(source), 201, { location: `/v1/sources/${source.id}` });
   })

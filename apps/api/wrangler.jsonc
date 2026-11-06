@@ -1,6 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "doubtless-api",
+  // Top-level config is LOCAL DEV ONLY and deliberately not the production script name, so a
+  // bare `wrangler deploy` can never replace production with dev settings. Prod: --env production.
+  "name": "doubtless-api-dev",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-06",
   "compatibility_flags": ["nodejs_compat"],
