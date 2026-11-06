@@ -1,0 +1,673 @@
+{
+  "product": "Gemini Notebook (formerly NotebookLM)",
+  "measured_on": "2026-11-06",
+  "account_tier": "Pro badge shown; 300-source limit",
+  "method": {
+    "timing": "In-page timers: keydown on Enter to first answer text and to input re-enabled, 100 ms sampling. Exceptions are listed in the notes for Q01, Q02 and Q03.",
+    "correctness": "Scored by Claude against answers written before asking; one rater, not independently reviewed.",
+    "citation_check": "Each unique citation clicked by script; highlighted text or hover text compared with the expected passage from its first ~100 characters plus its position. This is lenient.",
+    "fresh_chat": "Delete chat history between questions; the product has one thread per notebook."
+  },
+  "sources": {
+    "S1": "attention.pdf: Vaswani et al. 2017, arXiv 1706.03762, text PDF, 15 pp",
+    "S2": "naturebp.pdf: Rumelhart, Hinton, Williams 1986, Nature scan, 4 pp, no text layer. Page 1 also carries the end of an unrelated amino-acid paper",
+    "S3": "ciml.pdf: Daume, A Course in Machine Learning v0.99, 227 pp",
+    "S4": "YouTube zjkBMFhNj_g: Karpathy, Intro to Large Language Models, ~60 min, captions",
+    "S5": "https://nlp.seas.harvard.edu/annotated-transformer/ : blog with code blocks",
+    "S6": "handwritten_notes_synthetic.jpg: SYNTHETIC handwriting-style font on a lined page, slightly rotated and blurred. Not real handwriting"
+  },
+  "aggregates": {
+    "questions": 24,
+    "mean_ttft_s": 19.7,
+    "median_ttft_s": 17.3,
+    "min_max_ttft_s": [
+      11.9,
+      52.6
+    ],
+    "mean_total_s": 23.9,
+    "median_total_s": 21.6,
+    "accuracy_points": [
+      46,
+      48
+    ],
+    "accuracy_pct": 95.8,
+    "fully_correct": 22,
+    "responses_with_unsupported_claim": 3,
+    "responses_with_uncited_sentence": 3,
+    "citation_passage_ok": 58,
+    "citation_passage_checked": 58,
+    "citations_not_passage_verifiable": 18,
+    "abstention": "2/2 unanswerable, plus Q04 (truncated source) correctly declined",
+    "mean_stream_mb": 13.0,
+    "median_stream_mb": 10.6,
+    "mean_stream_s": 27.8,
+    "mean_words": 197.0,
+    "response_unsupported_rate_pct": 12.5
+  },
+  "questions": [
+    {
+      "id": "Q01",
+      "type": "lookup",
+      "question": "In the paper Attention Is All You Need, what optimizer settings and warmup_steps value were used?",
+      "expected": {
+        "source": "S1",
+        "locator": "p.7 sec 5.3"
+      },
+      "expected_answer": "Adam, beta1=0.9, beta2=0.98, epsilon=1e-9, warmup_steps=4000",
+      "notebooklm": {
+        "ttft_s": 13.0,
+        "total_s": 20.0,
+        "words": 109,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 4,
+        "citations_passage_ok": 4,
+        "citations_passage_checked": 4,
+        "granularity": "passage ~530-630 chars, highlighted in extracted text",
+        "abstained_correctly": null,
+        "stream_duration_s": 20.3,
+        "stream_decoded_mb": 7.4,
+        "notes": "Timed by panel-text sampling, not the final harness. Cites both the PDF and the blog quoting it, though the question names the paper. Ends with a suggested follow-up."
+      }
+    },
+    {
+      "id": "Q02",
+      "type": "lookup",
+      "question": "In Attention Is All You Need, how many sentence pairs and what vocabulary size were used for the English-German task?",
+      "expected": {
+        "source": "S1",
+        "locator": "p.7 sec 5.1"
+      },
+      "expected_answer": "About 4.5 million sentence pairs, shared vocabulary of about 37000 tokens",
+      "notebooklm": {
+        "ttft_s": 12.8,
+        "total_s": 15.8,
+        "words": 43,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 2,
+        "citations_passage_ok": 2,
+        "citations_passage_checked": 2,
+        "granularity": "passage ~600-1040 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 19.5,
+        "stream_decoded_mb": 4.2,
+        "notes": "Times, words and stream from the re-run (harness bug on first run gave no TTFT; first run total 13.7 s, 70 words). Same answer both runs."
+      }
+    },
+    {
+      "id": "Q03",
+      "type": "lookup",
+      "question": "In The Annotated Transformer, what are the default hyperparameter arguments of the make_model function?",
+      "expected": {
+        "source": "S5",
+        "locator": "make_model code block, Full Model section"
+      },
+      "expected_answer": "N=6, d_model=512, d_ff=2048, h=8, dropout=0.1",
+      "notebooklm": {
+        "ttft_s": null,
+        "total_s": 18.1,
+        "words": 102,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 6,
+        "citations_passage_ok": 4,
+        "citations_passage_checked": 4,
+        "granularity": "passage ~440-810 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 21.7,
+        "stream_decoded_mb": 7.9,
+        "notes": "TTFT not captured (harness bug). 2 citations hidden behind an overflow control were not opened. Correctly notes src_vocab and tgt_vocab have no defaults."
+      }
+    },
+    {
+      "id": "Q04",
+      "type": "lookup",
+      "question": "In The Annotated Transformer, what batch size does the synthetic copy-task example use?",
+      "expected": {
+        "source": "S5",
+        "locator": "A First Example, example_simple_model code block. This section is past the apparent end of the imported text"
+      },
+      "expected_answer": "batch_size = 80 on the live page. If the imported text stops earlier, saying it is not in the source is also correct; a different number is wrong",
+      "notebooklm": {
+        "ttft_s": 52.6,
+        "total_s": 55.1,
+        "words": 121,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 2,
+        "citations_passage_ok": 2,
+        "citations_passage_checked": 2,
+        "granularity": "passage ~600 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 58.8,
+        "stream_decoded_mb": 41.8,
+        "notes": "Noticed the import stops before the section and declined to guess; offered web research. Slowest answer: repeated search rounds. The live page says 80."
+      }
+    },
+    {
+      "id": "Q05",
+      "type": "explain",
+      "question": "Explain in simple terms why Attention Is All You Need divides the dot products by the square root of d_k.",
+      "expected": {
+        "source": "S1",
+        "locator": "p.4 sec 3.2.1 and footnote 4"
+      },
+      "expected_answer": "For large d_k dot products grow in magnitude (variance d_k), pushing softmax into small-gradient regions; scaling counteracts this",
+      "notebooklm": {
+        "ttft_s": 14.5,
+        "total_s": 20.1,
+        "words": 323,
+        "correct_0_2": 2,
+        "uncited_sentences": 2,
+        "unsupported_claims": 1,
+        "citations_opened": 7,
+        "citations_passage_ok": 7,
+        "citations_passage_checked": 7,
+        "granularity": "passage ~410-830 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 24.5,
+        "stream_decoded_mb": 13.5,
+        "notes": "Two uncited explanatory sentences, both correct. The softmax-extremes sentence adds background not in the source."
+      }
+    },
+    {
+      "id": "Q06",
+      "type": "explain",
+      "question": "Explain simply why the Transformer needs positional encodings and why the authors chose sinusoids.",
+      "expected": {
+        "source": "S1",
+        "locator": "p.6 sec 3.5"
+      },
+      "expected_answer": "No recurrence or convolution so order must be injected; sinusoids let the model attend by relative position and may extrapolate to longer sequences",
+      "notebooklm": {
+        "ttft_s": 16.5,
+        "total_s": 20.3,
+        "words": 254,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 6,
+        "citations_passage_ok": 6,
+        "citations_passage_checked": 6,
+        "granularity": "passage ~440-930 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 24.4,
+        "stream_decoded_mb": 10.9,
+        "notes": "Clean. Math rendered with KaTeX."
+      }
+    },
+    {
+      "id": "Q07",
+      "type": "explain",
+      "question": "Explain in simple terms why Karpathy compares training a large language model to compression.",
+      "expected": {
+        "source": "S4",
+        "locator": "about 5:10"
+      },
+      "expected_answer": "Training compresses a large chunk of internet text into the parameters, like a lossy zip file; about 100x; generation is partly lossy recall",
+      "notebooklm": {
+        "ttft_s": 16.9,
+        "total_s": 22.2,
+        "words": 310,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 7,
+        "citations_passage_ok": null,
+        "citations_passage_checked": null,
+        "granularity": "hover: passage; click: whole transcript highlighted, top of source",
+        "abstained_correctly": null,
+        "stream_duration_s": 25.8,
+        "stream_decoded_mb": 13.7,
+        "notes": "Hover text not captured in this run, so passages are unverified (facts match the transcript). Last sentences not read."
+      }
+    },
+    {
+      "id": "Q08",
+      "type": "explain",
+      "question": "Explain the naive Bayes assumption in simple terms, using the example from A Course in Machine Learning.",
+      "expected": {
+        "source": "S3",
+        "locator": "p.120 sec 9.3"
+      },
+      "expected_answer": "Features independent given the label; movie review words 'excellent' and 'amazing' are independent once the review is known to be positive, but not unconditionally",
+      "notebooklm": {
+        "ttft_s": 18.6,
+        "total_s": 24.7,
+        "words": 369,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 1,
+        "citations_opened": 3,
+        "citations_passage_ok": 2,
+        "citations_passage_checked": 2,
+        "granularity": "passage ~780-1100 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 29.4,
+        "stream_decoded_mb": 14.2,
+        "notes": "Long for a simple concept. Adds \"frequently co-occur\", which the source does not say. Last sentences not read. One citation not captured."
+      }
+    },
+    {
+      "id": "Q09",
+      "type": "table",
+      "question": "According to Table 2 of Attention Is All You Need, which model has the highest EN-DE BLEU, and by how many points does it beat the ConvS2S Ensemble?",
+      "expected": {
+        "source": "S1",
+        "locator": "p.8 Table 2"
+      },
+      "expected_answer": "Transformer (big), 28.4 vs 26.36, a difference of 2.04",
+      "notebooklm": {
+        "ttft_s": 13.8,
+        "total_s": 16.0,
+        "words": 83,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 2,
+        "citations_passage_ok": 2,
+        "citations_passage_checked": 2,
+        "granularity": "table passage ~750-810 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 20.3,
+        "stream_decoded_mb": 4.9,
+        "notes": "Table read and subtraction both right."
+      }
+    },
+    {
+      "id": "Q10",
+      "type": "table",
+      "question": "Using Table 2 of Attention Is All You Need, by what factor is the ConvS2S Ensemble EN-DE training cost larger than the Transformer base model's?",
+      "expected": {
+        "source": "S1",
+        "locator": "p.8 Table 2"
+      },
+      "expected_answer": "7.7e19 / 3.3e18, about 23.3x",
+      "notebooklm": {
+        "ttft_s": 16.4,
+        "total_s": 19.1,
+        "words": 83,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 1,
+        "citations_passage_ok": 1,
+        "citations_passage_checked": 1,
+        "granularity": "table passage ~810 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 22.9,
+        "stream_decoded_mb": 7.0,
+        "notes": "Scientific-notation arithmetic right: about 23.33x."
+      }
+    },
+    {
+      "id": "Q11",
+      "type": "table",
+      "question": "In Table 3 of Attention Is All You Need, within row group (A), which number of heads gives the lowest dev BLEU and what is that BLEU?",
+      "expected": {
+        "source": "S1",
+        "locator": "p.9 Table 3 row (A)"
+      },
+      "expected_answer": "h=1, BLEU 24.9",
+      "notebooklm": {
+        "ttft_s": 17.9,
+        "total_s": 21.7,
+        "words": 129,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 2,
+        "citations_passage_ok": 2,
+        "citations_passage_checked": 2,
+        "granularity": "table passage ~960 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 25.1,
+        "stream_decoded_mb": 8.1,
+        "notes": "Reconstructed the multi-row group (A), including the base row. Also found the 0.9 BLEU remark in the text."
+      }
+    },
+    {
+      "id": "Q12",
+      "type": "math",
+      "question": "Starting from equation 3 of Attention Is All You Need, derive step by step at which step the learning rate peaks and its peak value when d_model=512 and warmup_steps=4000.",
+      "expected": {
+        "source": "S1",
+        "locator": "p.7 eq 3"
+      },
+      "expected_answer": "Peak where the two min terms are equal, step=4000; lrate = 512^-0.5 * 4000^-0.5, about 0.000699",
+      "notebooklm": {
+        "ttft_s": 20.9,
+        "total_s": 29.0,
+        "words": 356,
+        "correct_0_2": 2,
+        "uncited_sentences": 2,
+        "unsupported_claims": 0,
+        "citations_opened": 4,
+        "citations_passage_ok": 4,
+        "citations_passage_checked": 4,
+        "granularity": "passage ~575-930 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 33.1,
+        "stream_decoded_mb": 26.2,
+        "notes": "Final value checked on a re-run (TTFT 30.3 s, total 40.1 s, 399 words): step 4000, about 0.000699. Uncited arithmetic steps are correct."
+      }
+    },
+    {
+      "id": "Q13",
+      "type": "math",
+      "question": "Using the back-propagation paper by Rumelhart, Hinton and Williams, derive equation 5 step by step from equations 2 and 4.",
+      "expected": {
+        "source": "S2",
+        "locator": "PDF p.2 (journal p.534) eqs 2, 4, 5"
+      },
+      "expected_answer": "dE/dx_j = dE/dy_j * dy_j/dx_j; from y=1/(1+e^-x), dy/dx = y(1-y); so dE/dx_j = dE/dy_j * y_j(1-y_j) = (y_j-d_j) y_j (1-y_j)",
+      "notebooklm": {
+        "ttft_s": 15.3,
+        "total_s": 23.2,
+        "words": 520,
+        "correct_0_2": 2,
+        "uncited_sentences": 3,
+        "unsupported_claims": 0,
+        "citations_opened": 2,
+        "citations_passage_ok": null,
+        "citations_passage_checked": null,
+        "granularity": "hover: page thumbnail; click: top of source, no highlight",
+        "abstained_correctly": null,
+        "stream_duration_s": 27.4,
+        "stream_decoded_mb": 18.8,
+        "notes": "Derivation from a scan with no text layer is fully right. Uncited calculus steps are correct. Citation for eq 4 (p.2) showed a thumbnail starting at p.1."
+      }
+    },
+    {
+      "id": "Q14",
+      "type": "scanned_image",
+      "question": "In the back-propagation paper, how many sweeps did the mirror-symmetry network in Figure 1 need, over how many input vectors, and with what epsilon and alpha?",
+      "expected": {
+        "source": "S2",
+        "locator": "PDF p.2 Fig 1 caption"
+      },
+      "expected_answer": "1,425 sweeps, 64 input vectors, epsilon=0.1, alpha=0.9",
+      "notebooklm": {
+        "ttft_s": 11.9,
+        "total_s": 14.0,
+        "words": 66,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 1,
+        "citations_passage_ok": null,
+        "citations_passage_checked": null,
+        "granularity": "hover: page thumbnail; click: top of source, no highlight",
+        "abstained_correctly": null,
+        "stream_duration_s": 21.6,
+        "stream_decoded_mb": 4.3,
+        "notes": "Read from the Fig 1 caption in a scan."
+      }
+    },
+    {
+      "id": "Q15",
+      "type": "scanned_image",
+      "question": "Looking at the diagram in Figure 1 of the back-propagation paper, what bias is written inside the output unit node, and what weights go into it from the hidden units?",
+      "expected": {
+        "source": "S2",
+        "locator": "PDF p.2 Fig 1 diagram; values only in the drawing, not the caption"
+      },
+      "expected_answer": "Bias 6.4; weights -8.8 and -8.8",
+      "notebooklm": {
+        "ttft_s": 37.5,
+        "total_s": 40.9,
+        "words": null,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 1,
+        "citations_passage_ok": null,
+        "citations_passage_checked": null,
+        "granularity": "hover: page thumbnail; click: top of source, no highlight",
+        "abstained_correctly": null,
+        "stream_duration_s": 45.0,
+        "stream_decoded_mb": 10.3,
+        "notes": "Read values that exist only inside the drawing (6.4, -8.8, -1.1). Word count not captured; about 1000 characters."
+      }
+    },
+    {
+      "id": "Q16",
+      "type": "scanned_image",
+      "question": "In my handwritten notes, what is my mnemonic for Q, K, V, who do I need to ask about warmup, and when and where is the exam?",
+      "expected": {
+        "source": "S6",
+        "locator": "whole image, lines 3-5"
+      },
+      "expected_answer": "Quiet Kittens Vanish; Priya on Thursday; 14 March, room B-207",
+      "notebooklm": {
+        "ttft_s": 17.3,
+        "total_s": 19.8,
+        "words": 65,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 1,
+        "citations_passage_ok": 1,
+        "citations_passage_checked": 1,
+        "granularity": "whole image",
+        "abstained_correctly": null,
+        "stream_duration_s": 23.2,
+        "stream_decoded_mb": 5.5,
+        "notes": "All three facts right. The note is a synthetic handwriting-style font, so this does not prove real handwriting works."
+      }
+    },
+    {
+      "id": "Q17",
+      "type": "long_source",
+      "question": "In A Course in Machine Learning, the naive Bayes model is described with biased coins. How many coins are there for D features?",
+      "expected": {
+        "source": "S3",
+        "locator": "p.121 sec 9.3"
+      },
+      "expected_answer": "1 + 2D",
+      "notebooklm": {
+        "ttft_s": 12.4,
+        "total_s": 14.8,
+        "words": 110,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 1,
+        "citations_passage_ok": 1,
+        "citations_passage_checked": 1,
+        "granularity": "passage ~1100 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 18.5,
+        "stream_decoded_mb": 5.7,
+        "notes": "From the middle of a 227-page book. Viewer scrolled to the passage."
+      }
+    },
+    {
+      "id": "Q18",
+      "type": "long_source",
+      "question": "In the bias and fairness chapter of A Course in Machine Learning, what upper bound is given for the error on a new distribution, and how is the variational distance defined?",
+      "expected": {
+        "source": "S3",
+        "locator": "p.113 sec 8.5 eqs 8.23-8.24"
+      },
+      "expected_answer": "e(new) <= e(old) + 2|Dnew-Dold|_Var; |P-Q|_Var = sup_e |P(e)-Q(e)| = 1/2 integral |P(x)-Q(x)| dx",
+      "notebooklm": {
+        "ttft_s": 17.5,
+        "total_s": 21.5,
+        "words": 184,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 3,
+        "citations_passage_ok": 3,
+        "citations_passage_checked": 3,
+        "granularity": "passage ~540-620 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 25.5,
+        "stream_decoded_mb": 9.9,
+        "notes": "First attempt vanished from the UI when sent 2 s after deleting chat (the request still completed); probably a race with that delete. Scored on the retry."
+      }
+    },
+    {
+      "id": "Q19",
+      "type": "video",
+      "question": "At what point in the Karpathy lecture does he introduce the reversal curse, and what example does he use?",
+      "expected": {
+        "source": "S4",
+        "locator": "about 12:50-13:10"
+      },
+      "expected_answer": "About 13 minutes in; Tom Cruise's mother is Mary Lee Pfeiffer, but asking who Mary Lee Pfeiffer's son is fails",
+      "notebooklm": {
+        "ttft_s": 24.8,
+        "total_s": 29.1,
+        "words": 216,
+        "correct_0_2": 1,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 4,
+        "citations_passage_ok": 4,
+        "citations_passage_checked": 4,
+        "granularity": "hover: passage; click: whole transcript highlighted, top of source",
+        "abstained_correctly": null,
+        "stream_duration_s": 32.9,
+        "stream_decoded_mb": 22.3,
+        "notes": "Example right. \"At what point\" answered by topic, with no time, and no warning that timestamps are unavailable."
+      }
+    },
+    {
+      "id": "Q20",
+      "type": "video",
+      "question": "According to the Karpathy lecture, how big is the Llama 2 70B parameters file and what does training it take in GPUs, days and money, and at what timestamps does he say this?",
+      "expected": {
+        "source": "S4",
+        "locator": "about 1:55 and about 5:10"
+      },
+      "expected_answer": "140 GB; about 6,000 GPUs for about 12 days, about $2 million",
+      "notebooklm": {
+        "ttft_s": 27.0,
+        "total_s": 30.0,
+        "words": 77,
+        "correct_0_2": 1,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 3,
+        "citations_passage_ok": 3,
+        "citations_passage_checked": 3,
+        "granularity": "hover: passage; click: whole transcript highlighted, top of source",
+        "abstained_correctly": null,
+        "stream_duration_s": 34.0,
+        "stream_decoded_mb": 14.8,
+        "notes": "All numbers right. States that the transcript has no timestamps and offers web research. Scored 1 because the timestamps asked for were not given."
+      }
+    },
+    {
+      "id": "Q21",
+      "type": "multi_hop",
+      "question": "How does the learning rate formula in Attention Is All You Need differ from the rate function in The Annotated Transformer?",
+      "expected": {
+        "source": "S1+S5",
+        "locator": "S1 p.7 eq 3; S5 Optimizer section, def rate"
+      },
+      "expected_answer": "Same schedule; code adds a factor multiplier and sets step=1 when step=0 to avoid zero to a negative power",
+      "notebooklm": {
+        "ttft_s": 17.8,
+        "total_s": 22.9,
+        "words": 247,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 3,
+        "citations_passage_ok": 3,
+        "citations_passage_checked": 3,
+        "granularity": "passage ~250-630 chars",
+        "abstained_correctly": null,
+        "stream_duration_s": 26.8,
+        "stream_decoded_mb": 13.3,
+        "notes": "Found both differences and quoted the code block. Last sentences not read."
+      }
+    },
+    {
+      "id": "Q22",
+      "type": "multi_hop",
+      "question": "Compare how Attention Is All You Need and the Karpathy lecture talk about how interpretable these models are.",
+      "expected": {
+        "source": "S1+S4",
+        "locator": "S1 p.7 end of sec 4; S4 about 13:35"
+      },
+      "expected_answer": "Paper: self-attention could yield more interpretable models, heads learn different tasks. Lecture: LLMs are mostly inscrutable artifacts",
+      "notebooklm": {
+        "ttft_s": 18.9,
+        "total_s": 29.1,
+        "words": 548,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 1,
+        "citations_opened": 6,
+        "citations_passage_ok": 4,
+        "citations_passage_checked": 4,
+        "granularity": "passage ~170-1040 chars; lecture citations open the whole transcript",
+        "abstained_correctly": null,
+        "stream_duration_s": 32.8,
+        "stream_decoded_mb": 22.9,
+        "notes": "Interpretive overconfidence: says attention offers \"a direct window\" into reasoning, where the paper only says \"could yield more interpretable models\". Very long. Only the first part was read closely."
+      }
+    },
+    {
+      "id": "Q23",
+      "type": "unanswerable",
+      "question": "What BLEU score does the Transformer achieve on the WMT 2016 English-to-Romanian task?",
+      "expected": {
+        "source": "none",
+        "locator": "not in any source"
+      },
+      "expected_answer": "Should say the sources do not cover it",
+      "notebooklm": {
+        "ttft_s": 13.7,
+        "total_s": 16.8,
+        "words": 84,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 3,
+        "citations_passage_ok": 2,
+        "citations_passage_checked": 2,
+        "granularity": "passage ~810-1200 chars",
+        "abstained_correctly": true,
+        "stream_duration_s": 20.5,
+        "stream_decoded_mb": 6.2,
+        "notes": "Abstained, then listed what the sources do cover. First attempt vanished when sent 2 s after deleting chat; scored on the retry."
+      }
+    },
+    {
+      "id": "Q24",
+      "type": "unanswerable",
+      "question": "According to the Karpathy lecture, what did it cost to train Google Gemini Ultra?",
+      "expected": {
+        "source": "none",
+        "locator": "not in the lecture; the word Gemini does not appear in the transcript"
+      },
+      "expected_answer": "Should say the lecture does not cover it",
+      "notebooklm": {
+        "ttft_s": 26.1,
+        "total_s": 29.3,
+        "words": 129,
+        "correct_0_2": 2,
+        "uncited_sentences": 0,
+        "unsupported_claims": 0,
+        "citations_opened": 2,
+        "citations_passage_ok": 1,
+        "citations_passage_checked": 1,
+        "granularity": "hover: passage; click: whole transcript highlighted",
+        "abstained_correctly": true,
+        "stream_duration_s": 32.8,
+        "stream_decoded_mb": 18.8,
+        "notes": "Abstained, then gave the Llama 2 figures as adjacent, clearly labelled context. Two search rounds."
+      }
+    }
+  ]
+}
