@@ -71,7 +71,6 @@ function FileForm({ notebookId, onDone }: { notebookId: string; onDone: () => vo
   const [file, setFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [key] = useState(newIdempotencyKey);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -80,7 +79,12 @@ function FileForm({ notebookId, onDone }: { notebookId: string; onDone: () => vo
     try {
       setProgress(0);
       const upload = await uploadFile(file, setProgress);
-      await create.mutateAsync({ json: { type: "upload", uploadId: upload.id }, key });
+      // The intent is "make a source from THIS upload": derive the key from the upload id so a
+      // retried create replays, while a re-upload (new id) is a new intent.
+      await create.mutateAsync({
+        json: { type: "upload", uploadId: upload.id },
+        key: `source-from-upload:${upload.id}`,
+      });
       onDone();
     } catch (err) {
       setError(describe(err));

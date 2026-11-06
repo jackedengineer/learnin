@@ -83,16 +83,28 @@ export const useDeleteNotebook = () => {
   });
 };
 
+type SourcePage = { data: Source[]; nextCursor: string | null };
+
+/** All sources of a notebook (a notebook holds at most a few hundred), fetched page by page. */
 export const useSources = (notebookId: string) =>
   useQuery({
     queryKey: keys.sources(notebookId),
-    queryFn: async () =>
-      unwrap<{ data: Source[]; nextCursor: string | null }>(
-        await api.v1.notebooks[":notebookId"].sources.$get({
-          param: { notebookId },
-          query: { limit: "100" },
-        }),
-      ),
+    queryFn: async (): Promise<SourcePage> => {
+      const data: Source[] = [];
+      let cursor: string | undefined;
+      for (let i = 0; i < 20; i++) {
+        const page = await unwrap<SourcePage>(
+          await api.v1.notebooks[":notebookId"].sources.$get({
+            param: { notebookId },
+            query: { limit: "100", cursor },
+          }),
+        );
+        data.push(...page.data);
+        if (!page.nextCursor) break;
+        cursor = page.nextCursor;
+      }
+      return { data, nextCursor: null };
+    },
   });
 
 export const useCreateSource = (notebookId: string) => {
