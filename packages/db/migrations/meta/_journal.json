@@ -8,6 +8,13 @@
       "when": 1793958933757,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793960920143,
+      "tag": "0001_ms_timestamps_and_etags",
+      "breakpoints": true
     }
   ]
 }

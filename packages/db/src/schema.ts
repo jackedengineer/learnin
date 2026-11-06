@@ -20,8 +20,11 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
-const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
+// Millisecond precision: matches JS Date exactly, so keyset cursors built from a Date
+// compare equal to the stored value (microseconds would make cursors skip rows).
+const ts = (name: string) => timestamp(name, { withTimezone: true, precision: 3 });
+const createdAt = () => ts("created_at").notNull().defaultNow();
+const updatedAt = () => ts("updated_at").notNull().defaultNow();
 
 /* ───────────────────────────── Auth (Better Auth) ───────────────────────────── */
 // Field keys must match Better Auth's model fields; column names follow our conventions.
@@ -165,6 +168,8 @@ export const uploads = pgTable(
     declaredSize: bigint("declared_size", { mode: "number" }).notNull(),
     byteSize: bigint("byte_size", { mode: "number" }),
     sha256: text("sha256"),
+    // R2 ETag of the object verified at completion; readers must require it (overwrite protection).
+    etag: text("etag"),
     status: uploadStatusEnum("status").notNull().default("pending"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: createdAt(),
@@ -216,6 +221,8 @@ export const sources = pgTable(
     mime: text("mime"),
     byteSize: bigint("byte_size", { mode: "number" }),
     contentSha256: text("content_sha256"),
+    // R2 ETag of the verified object; ingestion reads with onlyIf.etagMatches (ARCHITECTURE §4).
+    storageEtag: text("storage_etag"),
     status: sourceStatusEnum("status").notNull().default("pending"),
     error: jsonb("error").$type<{ code: string; message: string } | null>(),
     pipelineVersion: integer("pipeline_version").notNull().default(1),

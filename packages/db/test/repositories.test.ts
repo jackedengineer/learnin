@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Database } from "../src/client.ts";
 import { decodeCursor, encodeCursor } from "../src/pagination.ts";
@@ -60,6 +61,35 @@ describe("notebookRepo", () => {
     expect(p3.nextCursor).toBeNull();
   });
 
+  it("does not skip rows that share a millisecond (regression: µs vs ms cursor)", async () => {
+    const u = await createUser(db);
+    for (const us of ["123100", "123200", "123300"]) {
+      const nb = await notebookRepo.create(db, u.id, { title: `t${us}` });
+      await db.execute(
+        sql`UPDATE notebooks SET created_at = ${`2026-11-06T10:00:00.${us}Z`}::timestamptz WHERE id = ${nb.id}`,
+      );
+    }
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await notebookRepo.list(db, u.id, {
+        limit: 1,
+        cursor: cursor ? decodeCursor(cursor) : null,
+      });
+      seen.push(...page.items.map((n) => n.title));
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(seen.sort()).toEqual(["t123100", "t123200", "t123300"]);
+  });
+
+  it("lockLive sees live notebooks only", async () => {
+    const u = await createUser(db);
+    const nb = await notebookRepo.create(db, u.id, { title: "lock me" });
+    expect(await db.transaction((tx) => notebookRepo.lockLive(tx, u.id, nb.id))).toBe(true);
+    await notebookRepo.softDelete(db, u.id, nb.id);
+    expect(await db.transaction((tx) => notebookRepo.lockLive(tx, u.id, nb.id))).toBe(false);
+  });
+
   it("soft-deletes the notebook and its sources", async () => {
     const u = await createUser(db);
     const nb = await notebookRepo.create(db, u.id, { title: "To delete" });
@@ -98,6 +128,7 @@ describe("uploadRepo", () => {
       byteSize: 1000,
       detectedMime: "application/pdf",
       sha256: "ab",
+      etag: "e1",
     });
     expect(done?.status).toBe("completed");
     expect(
@@ -105,6 +136,7 @@ describe("uploadRepo", () => {
         byteSize: 1,
         detectedMime: "x",
         sha256: "y",
+        etag: "e2",
       }),
     ).toBeNull();
     const [a, b] = await Promise.all([
@@ -137,6 +169,23 @@ describe("idempotencyRepo", () => {
     const again = await idempotencyRepo.claim(db, u.id, input);
     expect(again.claimed).toBe(false);
     if (!again.claimed) expect(again.existing.state).toBe("completed");
+  });
+
+  it("a stale in-progress claim (crashed request) can be reclaimed after the lease", async () => {
+    const u = await createUser(db);
+    const input = {
+      key: "key-stale-123",
+      method: "POST",
+      path: "/x",
+      requestHash: "h",
+      ttlSeconds: 60,
+    };
+    expect((await idempotencyRepo.claim(db, u.id, input)).claimed).toBe(true);
+    expect((await idempotencyRepo.claim(db, u.id, input)).claimed).toBe(false);
+    await db.execute(sql`UPDATE idempotency_keys SET created_at = now() - interval '2 minutes'`);
+    expect((await idempotencyRepo.claim(db, u.id, { ...input, leaseSeconds: 60 })).claimed).toBe(
+      true,
+    );
   });
 
   it("release frees an in-progress claim", async () => {
