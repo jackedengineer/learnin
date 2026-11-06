@@ -1,0 +1,51 @@
+# Production deploy: main → migrate Neon → wrangler deploy (ARCHITECTURE §12).
+# Requires repo secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, NEON_DATABASE_URL (direct, not pooled).
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Refuse placeholder Hyperdrive id
+        run: |
+          if grep -q '"id": "00000000000000000000000000000000"' apps/api/wrangler.jsonc; then
+            echo "::error::Set the real Hyperdrive id in apps/api/wrangler.jsonc (docs/runbooks/deploy.md)"; exit 1
+          fi
+      - name: Build web assets
+        run: pnpm --filter @doubtless/web build
+      - name: Apply database migrations (expand-only; ADR-0002)
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      - name: Deploy Worker + static assets
+        working-directory: apps/api
+        run: npx wrangler deploy --env production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Post-deploy health check
+        run: curl -fsS "https://doubtless.app/v1/health?deep=1"

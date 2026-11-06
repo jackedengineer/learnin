@@ -14,7 +14,9 @@
     "format": "biome format --write .",
     "db:generate": "pnpm --filter @doubtless/db generate",
     "db:migrate": "pnpm --filter @doubtless/db migrate",
-    "db:check": "pnpm --filter @doubtless/db check"
+    "db:check": "pnpm --filter @doubtless/db check",
+    "e2e": "pnpm --filter @doubtless/web e2e",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm db:check"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",

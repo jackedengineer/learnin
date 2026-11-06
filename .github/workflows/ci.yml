@@ -1,0 +1,104 @@
+# Quality gates (ADR-0003). Every push and PR; all jobs must pass before merge.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# DB password: ephemeral, job-local service container. Not a real secret; a CI_DB_PASSWORD
+# repo secret overrides it. (The `env` context isn't available in `services`, hence inline.)
+
+jobs:
+  static:
+    name: Lint · typecheck · build · migrations · audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+      - name: Migrations are in sync with the schema
+        run: pnpm --filter @doubtless/db exec drizzle-kit check
+      - name: Dependency audit (high+)
+        run: pnpm audit --audit-level high --prod
+
+  test:
+    name: Unit + integration (Postgres 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: doubtless
+          POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci-ephemeral' }}
+          POSTGRES_DB: doubtless_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://doubtless:${{ secrets.CI_DB_PASSWORD || 'ci-ephemeral' }}@localhost:5432/doubtless_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run test --concurrency=1
+
+  e2e:
+    name: Browser smoke (workerd + Vite + Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: doubtless
+          POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci-ephemeral' }}
+          POSTGRES_DB: doubtless
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://doubtless:${{ secrets.CI_DB_PASSWORD || 'ci-ephemeral' }}@localhost:5432/doubtless
+      CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://doubtless:${{ secrets.CI_DB_PASSWORD || 'ci-ephemeral' }}@localhost:5432/doubtless
+      WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://doubtless:${{ secrets.CI_DB_PASSWORD || 'ci-ephemeral' }}@localhost:5432/doubtless
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @doubtless/web exec playwright install --with-deps chromium
+      - run: pnpm db:migrate
+      - name: Local secrets for wrangler dev (random, never committed)
+        run: printf 'BETTER_AUTH_SECRET=%s\n' "$(openssl rand -base64 32)" > apps/api/.dev.vars
+      - name: Start API (wrangler dev) and web (vite)
+        run: |
+          (cd apps/api && npx wrangler dev --port 8787 > ../../api.log 2>&1 &)
+          (cd apps/web && npx vite --port 5173 --strictPort > ../../web.log 2>&1 &)
+          npx --yes wait-on@8 -t 120000 http-get://localhost:8787/v1/health http-get://localhost:5173
+      - run: pnpm --filter @doubtless/web e2e e2e/screenshots
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots-and-logs
+          path: |
+            apps/web/e2e/screenshots/
+            api.log
+            web.log
