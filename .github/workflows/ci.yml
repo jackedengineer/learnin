@@ -30,6 +30,14 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build
+      - name: Deploy preflight logic
+        run: node --test .github/scripts/production-preflight.test.mjs
+      # Catches a broken production bundle or config on the PR, not after merging to main.
+      - name: Production Worker bundles (uploads nothing)
+        working-directory: apps/api
+        run: npx wrangler deploy --env production --dry-run --outdir "$RUNNER_TEMP/worker"
+        env:
+          WRANGLER_SEND_METRICS: "false"
       - name: Migrations are in sync with the schema
         run: pnpm --filter @doubtless/db exec drizzle-kit check
       - name: Dependency audit (high+)
