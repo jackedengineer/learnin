@@ -2,7 +2,18 @@
 
 > A personal, multimodal learning notebook. You bring sources, and it finds more on the web. You study, ask questions and get precise answers grounded in **your** material, with citations that jump to the exact page, timestamp or paragraph.
 
-Status: **Draft v2** · Last updated: 2026-11-06
+Status: **v3 — stack finalized** · Last updated: 2026-11-06
+Plain-language companion: [OVERVIEW.md](./OVERVIEW.md) · Competitor teardown: [NotebookLM product teardown](../reports/NotebookLM%20product%20teardown.md)
+
+**What changed in v3** (decisions confirmed + learnings from the Gemini Notebook / NotebookLM teardown)
+- **Region: Singapore.** Neon in AWS `ap-southeast-1`. Qdrant Cloud in the same AWS region, with Workers placed next to them (§12.1).
+- **Hono confirmed** (Express not required).
+- **User-supplied media is first-class:** your own recordings plus standalone transcript files (`.vtt`, `.srt`, `.txt` with timestamps). A transcript can be linked to its video for timestamp playback (§4.2).
+- **Full-context mode:** when the selected sources are small enough, send them whole with prompt caching instead of retrieving. The UI shows which path an answer took (§5.6).
+- **Source guide:** a per-source summary + key-topic chips generated at ingestion (§4.6).
+- **Notebook answer modes** (Default / Tutor / Custom + length), **source scoping checkboxes**, and **notes that keep citations** (§5.5, §10).
+- **Numeric questions get a code tool**, a **"background knowledge" label** for anything not from sources, and **study items carry verified chunk citations** (§5.7, §8.3).
+- **Quality metrics aligned with the competitor's published numbers** (response-level unsupported-claim rate, §7).
 
 **What changed in v2**
 - **Platform:** everything runs on **Cloudflare** (Workers, Workflows, Queues, Durable Objects, R2, Containers, AI Gateway) with **Neon** for Postgres. Redis and BullMQ are gone.
@@ -44,8 +55,9 @@ Status: **Draft v2** · Last updated: 2026-11-06
 2. **Source ingestion**, multimodal:
    - PDFs and research papers (including scanned pages, figures, tables and math)
    - Images (whiteboard photos, diagrams, screenshots, handwritten notes)
-   - Video: uploaded files and YouTube/course URLs
+   - Video: uploaded files (including your own screen recordings of courses) and YouTube URLs
    - Audio: lectures, podcasts
+   - Transcript files (`.vtt`, `.srt`, timestamped `.txt`), optionally linked to a video file or URL
    - Web pages and blogs
    - Plain text, Markdown, DOCX (PPTX/EPUB later)
 3. **Web discovery**: the system proposes high-quality resources for a notebook's topic. You approve them, then they're ingested.
@@ -360,6 +372,7 @@ type ExtractedDoc = {
 | **YouTube** | Captions if available, else `yt-dlp` audio → ASR. Chapters from the description | **Container** (yt-dlp) |
 | **Video file** | ffmpeg: audio track + scene-detected keyframes (`select='gt(scene,0.3)'`), deduped by perceptual hash. Audio → ASR with timestamps. Frames → Haiku captions + multimodal embedding, aligned to transcript time | **Container** + Worker |
 | **Audio** | Split into ~10-min segments → Whisper (Workers AI), offsets re-based to source time | Container (split) + Workers AI |
+| **Transcript file** (`.vtt` / `.srt` / timestamped `.txt`) | Parse cues → `transcript_segment` blocks with `startMs`/`endMs`. No ASR needed. If the user links a video (upload or URL), citations seek that player. If not, citations show the timestamp and quote | Worker |
 | **Web / blog** | Fetch → Readability (`linkedom`) → Markdown (`turndown`), keeping heading hierarchy. JS-rendered pages → **Browser Rendering** | Worker |
 | **DOCX / text / MD** | `mammoth` / `remark` → Markdown | Worker |
 
@@ -381,9 +394,15 @@ Short clips (< 100 MB, < 10 min) can use **Media Transformations** for frame and
 - BM25 → Qdrant server-side (send text, not vectors).
 - **Embedding cache** in R2/KV keyed by `(sha256(text), model)`.
 
-### 4.5 Web discovery (unchanged in shape)
+### 4.5 Web discovery: two speeds
 
-`Discover` workflow: the LLM (Haiku) plans 5–10 queries from notebook goals and level → web search (Claude server-side `web_search` tool, or the Brave/Exa API) → dedupe vs. existing sources → Haiku scores relevance, level fit, authority and recency (structured output) → `discovery_suggestions` → **you approve** → `IngestSource`.
+- **Quick discover** (synchronous, ~5–15 s): Haiku plans 3–5 queries from notebook goals and level → web search (Claude server-side `web_search` tool) → dedupe vs. existing sources → Haiku scores relevance, level fit, authority and recency (structured output) → ~10 suggestions, each with a one-line "why this".
+- **Deep discover** (background `Discover` workflow, minutes): more queries, fetches and reads candidates, and writes a short annotated reading list with a suggested order (beginner → advanced). It notifies you when done.
+- Both end the same way: **you approve** → `IngestSource`. Imported web pages are untrusted text (§9).
+
+### 4.6 Source guide
+
+The last ingestion step generates a **source guide** for every source: a 3–5 sentence summary, 5–8 key topics (tappable chips that start a chat prompt), and for papers the title, authors and year. Haiku runs over the extracted text with section-level prompt caching. It's stored on `sources.metadata.guide`. This is cheap, makes a new source immediately useful, and doubles as the input to discovery dedupe and to full-context mode decisions (§5.6).
 
 ---
 
@@ -464,9 +483,39 @@ Ship the **fixed pipeline** (one retrieval pass, then answer). Add an **agentic 
 ### 5.5 Personalization
 
 1. **Learner profile** (explicit) → cached system prompt.
-2. **Notebook learning state** (derived): a Cron-triggered summary of recurring concepts, confusions and quiz misses.
-3. **Focus context:** current source + page/timestamp biases retrieval.
-4. **Source priority:** boost "primary" sources (course textbook) during reranking.
+2. **Notebook answer mode:** **Default** (direct cited answer), **Tutor** (Socratic: checks your understanding, asks a follow-up, gives hints before answers), or **Custom** (your own instructions, ≤ 10k chars), plus **length** (shorter / default / longer). Stored per notebook, applied to chat and study outputs, and part of the cached prefix.
+3. **Notebook learning state** (derived): a Cron-triggered summary of recurring concepts, confusions and quiz misses.
+4. **Focus context:** current source + page/timestamp biases retrieval.
+5. **Source scope:** checkboxes in the sources pane restrict retrieval to the selected sources (a Qdrant `source_id` filter). Defaults to all.
+6. **Source priority:** boost "primary" sources (course textbook) during reranking.
+
+### 5.6 Full-context mode (when retrieval isn't needed)
+
+The teardown suggests Gemini Notebook mixes whole-source long context with retrieval, and that its October 2025 context increase raised answer satisfaction on multi-source questions. We do the same, but **visibly** and **cost-aware**:
+
+```
+selected_tokens = Σ token_count of sources in scope (from the source guides / chunk counts)
+if selected_tokens ≤ 60k  and  (focus on one source  or  user scoped ≤ 3 sources):
+      → FULL-CONTEXT: send the whole source(s) as document blocks (PDFs as native PDF documents,
+        so citations come back with page numbers), cache_control on the documents
+else  → RAG pipeline (§5.1)
+```
+
+- **Prompt caching is what makes this affordable.** The first question on a 50k-token source costs a cache write. Follow-ups within the cache TTL read it at a fraction of the price. 60k tokens uncached on Sonnet 5.5 is ~$0.12, while cached reads are ~$0.01. The threshold is a config value, tuned with evals and cost data.
+- **Best for:** "explain this paper", "summarize this lecture", and questions where the answer is spread thinly across one source, which is retrieval's weak spot.
+- **The answer header shows the path:** "Read all of *Attention Is All You Need*" vs. "Searched 6 sources, used 9 passages". You can always see why an answer is grounded the way it is.
+
+### 5.7 Precision guardrails (where the competitor is weakest)
+
+The teardown's reported failure modes were overstated interpretations, quotes restated as fact, wrong numeric comparisons, and weak handling of scans, tables, math and figures. Our countermeasures:
+
+| Failure mode | Countermeasure |
+|---|---|
+| Numeric comparisons / table math | Standard and deep tiers get Claude's **code execution** tool when the question involves numbers from tables. The model computes instead of eyeballing |
+| Interpretive overconfidence / attribution loss | Prompt rule: keep attributions ("the authors argue…"), and mark inference explicitly. The groundedness judge (§7) checks exactly this |
+| Outside knowledge creeping in | Anything not from a cited source is rendered under a **"Background knowledge"** label, separate from sourced content. Measured by abstention evals |
+| Scans, tables, math, figures | Vision page routing + LaTeX/GFM transcription at ingestion (§4.2). Figures get captions and image vectors |
+| Citation lands on the wrong spot | Citations point at chunk-level locators (page + bbox, timestamp, text fragment), and the viewer shows the **original render** with highlight, not just extracted text |
 
 ---
 
@@ -545,6 +594,7 @@ Web: `fetch` + stream reader. Mobile: **`expo/fetch`** (supports streaming bodie
 - **Golden set v0** in week 1: 30–50 questions over 3–5 real notebooks, with labelled relevant chunks and key facts, and **10–15 % unanswerable**.
 - **Retrieval metrics:** recall@k, MRR, nDCG@10. Deterministic, run on every chunking, embedding, fusion or rerank change.
 - **Generation metrics:** groundedness (claim-level LLM judge), citation precision, correctness vs. key facts, abstention accuracy.
+- **Competitor-comparable metrics:** report the **response-level unsupported-claim rate** (share of answers with ≥ 1 unsupported claim) alongside claim-level groundedness. The only published grounded-QA figure for NotebookLM is ~13 % of responses (small newsroom study, 2025), plus ~95 % correct passage location in a medical study. Those are the bars to beat. The hands-on protocol in [docs/research/notebooklm-hands-on-test.md](./research/notebooklm-hands-on-test.md) measures both products on the same 24 questions.
 - **Router metrics (new):** per-tier quality on the golden set, plus **routing accuracy**. Hand-label the "right" tier for ~50 questions, then track how often light-tier answers fail groundedness compared with what the deep tier would have produced (§8.4).
 - **CI:** each PR gets a **Neon branch** and a fresh **Qdrant collection** (`chunks_pr_<n>`) seeded from a fixture corpus. Retrieval evals run on every PR, LLM-judged evals nightly or on label. Block merges on > 2-point regressions.
 - **Online signals:** 👍/👎 with reasons, citation clicks, regenerate rate, "explain again" escalations, low-coverage rate per notebook.
@@ -619,7 +669,8 @@ Design notes:
 | Page/figure transcription, frame captions | Haiku 5.5 (escalate hard pages to Sonnet 5.5) |
 | Contextual chunk prefixes | Haiku 5.5 + prompt caching |
 | Discovery planning + scoring | Haiku 5.5 |
-| Flashcards / quizzes / study guides | Sonnet 5.5 (Opus for "exam prep" mode) |
+| Flashcards / quizzes / study guides | Sonnet 5.5 (Opus for "exam prep" mode). Structured output, so native citations aren't available. Each item stores `chunk_ids` + a verbatim `quote`, and a post-generation check drops items whose quote isn't found in the cited chunk. Tapping an item opens a cited explanation in chat |
+| Source guides | Haiku 5.5 |
 | Agentic "deep answer" (v2) | Opus 5.5, effort `high` |
 | Eval judge | Opus 5.5 (the judge must be ≥ the strongest model under test) |
 | ASR | Workers AI Whisper (Deepgram for diarization) |
@@ -688,7 +739,9 @@ The `UserBudget` Durable Object holds a per-user daily $ counter. `packages/ai` 
 ### 10.2 Web (`apps/web`)
 
 - Vite + React 19 + TanStack Router + TanStack Query. Tailwind + shadcn/ui. Deployed as **Workers static assets**, same origin as the API (no CORS).
-- Three-pane notebook: **sources | chat | source viewer**. Citation click → viewer at the exact page/bbox, video timestamp or paragraph.
+- Three-pane notebook: **sources (with scope checkboxes + source guides) | chat | right pane with tabs: Viewer · Study · Notes**. Citation hover → quote preview. Click → viewer at the exact page/bbox, video timestamp or paragraph, showing the **original rendering** (with a toggle to the extracted text).
+- **Notes:** save any answer to notes with its citations intact. Notes are editable and can be added back as a source.
+- **Notebook organization:** tags and pinning from day 1 (a top complaint about the competitor is no folders).
 - `react-pdf` with bbox highlight, YouTube IFrame API / HTML5 video, sanitized reader view.
 - `react-markdown` + `remark-math` + `rehype-katex` + code highlighting.
 - A **Quick / Auto / Deep** toggle in the composer maps to the router's `mode`.
@@ -727,10 +780,18 @@ client ──traceparent──▶ api Worker ──(trace ctx in workflow params
 | `apps/api` (+ DOs), `apps/web` assets | Cloudflare Workers (Smart Placement on) |
 | `apps/pipelines` (Workflows, Queue consumers, crons) | Cloudflare Workers |
 | `apps/media` | Cloudflare Containers (image built in CI, pushed by `wrangler deploy`) |
-| Postgres | **Neon**, same region as Qdrant, accessed via Hyperdrive |
-| Vector DB | **Qdrant Cloud**, same cloud and region as Neon |
+| Postgres | **Neon**, AWS `ap-southeast-1` (Singapore), accessed via Hyperdrive |
+| Vector DB | **Qdrant Cloud**, AWS `ap-southeast-1` (Singapore), see §12.1 |
 | Blobs | R2 |
 | Mobile | EAS Build / Submit / Update |
+
+### 12.1 Region plan: Singapore
+
+- **Neon:** AWS `ap-southeast-1`.
+- **Qdrant Cloud:** create the cluster on **AWS `ap-southeast-1`**. Qdrant's docs say paid (Standard) clusters have a "broad choice of regions on AWS, GCP and Azure", while **free-tier clusters have a limited region choice**. The public docs don't list regions, so confirm in the cluster-create dropdown (or `qcloud cloud-region list --cloud-provider aws`).
+  - If Singapore isn't offered on the free tier: use **local Docker Qdrant** for development and start production on the smallest Standard cluster in Singapore. Don't put the free cluster in another region, because every question would pay a cross-region round trip.
+- **Workers:** enable **Smart Placement** for `api` and `pipelines`, so the Worker runs near Neon and Qdrant rather than near the user. The ~1 RTT from user to Singapore is paid once per request, instead of on every DB and vector call.
+- **Third-party APIs** (Anthropic, Voyage) are reached from Singapore. Measure the Voyage embed + rerank round trips in Phase 1. If they dominate the retrieval budget, cache query embeddings (already in KV) and consider a lighter rerank model.
 
 **Local dev:** `wrangler dev` for the Workers (local DO, Queues, Workflows and R2 emulation via Miniflare), `docker compose` for **Qdrant** and **Postgres** locally (or a personal Neon branch), and the media container via Docker. `pnpm dev` runs everything with Turbo.
 
@@ -746,7 +807,7 @@ client ──traceparent──▶ api Worker ──(trace ctx in workflow params
 |---|---|---|
 | **0: Skeleton** | Monorepo, wrangler setup, Neon + Hyperdrive + Drizzle, Better Auth, notebooks CRUD, R2 presigned uploads, Hono + `hc` client, web shell | Workers platform, typed REST, auth |
 | **1: Text RAG MVP** | PDF text layer + web URL ingestion as a Workflow, chunking, voyage-4 → **Qdrant** (dense only), PG↔Qdrant outbox, streaming chat with native citations, PDF deep links. **Golden set v0 + retrieval eval** | Durable workflows, two-store consistency, vector search, citations, evals |
-| **2: Make it good** | Server-side BM25 + RRF hybrid, rerank, parent/child, contextual retrieval, **router (3 tiers)**, Langfuse, AI Gateway, cost ledger + `UserBudget` DO, reconciliation cron | Retrieval engineering, model routing, cost control |
+| **2: Make it good** | Server-side BM25 + RRF hybrid, rerank, parent/child, contextual retrieval, **router (3 tiers)**, **full-context mode**, source guides, answer modes + scope checkboxes, notes with citations, Langfuse, AI Gateway, cost ledger + `UserBudget` DO, reconciliation cron | Retrieval engineering, model routing, cost control |
 | **3: Multimodal** | Media container (ffmpeg, yt-dlp, mupdf), vision page routing, images, YouTube, video/audio ASR + keyframes, `image` named vector, timestamp deep links | Containers, media pipelines, multimodal retrieval |
 | **4: Mobile** | Expo app, share sheet, WebSocket progress, push, version-skew guard | RN, streaming on mobile |
 | **5: Tutor** | Learner profile, learning state, focus context, web discovery, live web fallback, flashcards (`ts-fsrs`), quizzes | Personalization, agentic workflows |
@@ -784,9 +845,15 @@ client ──traceparent──▶ api Worker ──(trace ctx in workflow params
 
 ---
 
-## 16. Open questions
+## 16. Decisions log and open questions
 
-1. **Region:** which region for Neon, and does Qdrant Cloud offer the same cloud and region? Co-location matters more than anything else for chat latency.
-2. **Express:** is it a hard requirement? It runs on Workers through the Node compatibility layer, but this design assumes Hono (§6.1).
-3. **Copyrighted course videos** (Udemy/Coursera) generally can't be downloaded. Is "upload your own recording / paste the transcript / timestamped notes" acceptable?
-4. **Just you, or friends too?** That decides when Phase 6 hardening is worth it.
+Resolved:
+- Region → **Singapore** (Neon + Qdrant on AWS `ap-southeast-1`).
+- API framework → **Hono** (Express not required).
+- Course content → users upload what they have (recordings, transcripts, PDFs). The app doesn't fetch from course platforms.
+
+Open:
+1. **Qdrant free tier in Singapore?** Check the cluster-create dropdown (2 minutes). See the fallback in §12.1.
+2. **Hands-on baseline:** run [the comparison protocol](./research/notebooklm-hands-on-test.md) against Gemini Notebook on a signed-in browser, so v1 has real numbers to beat.
+3. **Just you, or friends too?** That decides when Phase 6 hardening is worth it.
+4. **Audio overviews** (podcast-style summaries) are the competitor's signature feature. In scope for Phase 5+ (Claude script → TTS), or skipped for a learning-first product?

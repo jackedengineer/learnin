@@ -58,9 +58,10 @@ Think of the system as a small, very fast library with a tutor on staff.
 
 ### Journey 3: Adding a lecture from your phone
 
-1. You're on YouTube, or you've got your own screen recording or a `.vtt` transcript. You tap **Share → Learnin → pick the notebook**.
+1. You're on YouTube, or you've got your own screen recording of a course, or just its transcript file (`.vtt`, `.srt`, timestamped `.txt`). You tap **Share → Learnin → pick the notebook**.
 2. The back office sends it to the **AV room**:
    - YouTube with captions → use the captions. No captions, or your own recording → extract the audio and **transcribe it** (Whisper), with a timestamp on every sentence.
+   - Transcript file only → no transcription needed. It's ready in seconds. Link it to the video if you have it, so citations can jump to the right moment.
    - The video is scanned for **scene changes**. Each new slide or whiteboard state becomes a key frame that the tutor describes ("slide: Multi-Head Attention diagram, 8 heads…").
 3. The transcript is split into ~1–2 minute passages, each tied to its **start and end time** and the slides shown during it.
 4. A 1-hour lecture takes roughly **5–10 minutes**. You get a push notification when it's ready.
@@ -79,6 +80,10 @@ You're at **14:32** of the lecture and confused. You type: *"Why does he say we 
 | 6. Pick a tutor | Conceptual question, several sources → **Sonnet** (everyday tutor) | instant |
 | 7. Answer | Sonnet streams an explanation at your level: intuition first, then the formula, then an example. Every claim carries a **numbered citation** | first words at ~1.5–2.5 s |
 | 8. Save | The answer, its citations, which tutor answered, the time taken and the cost (~$0.03) are recorded | — |
+
+**Shortcut: "read the whole thing" mode.** If you've narrowed the question to one paper or one lecture (and it's not huge), the app skips the search entirely and hands the tutor **the whole source**. The answer header tells you which happened: *"Read all of Lecture 3"* or *"Searched 6 sources, used 9 passages"*. The first question on that source costs a bit more. Follow-ups are cheap because the source stays "in the tutor's short-term memory" (prompt caching).
+
+**Answer modes** (per notebook): **Default** gives a direct cited answer. **Tutor** checks your understanding and gives hints before full answers. **Custom** follows your own instructions. You also pick shorter / default / longer.
 
 ### Journey 5: Tapping a citation
 
@@ -113,6 +118,23 @@ The dispatcher sees a **derive + compare across sources** question and hands it 
 From any notebook: **flashcards** and **quizzes** generated from your sources (each card links back to its citation), scheduled with spaced repetition so you see each card just before you'd forget it.
 
 ---
+
+## How this compares to Gemini Notebook (formerly NotebookLM)
+
+From the [teardown report](../reports/NotebookLM%20product%20teardown.md), based on public sources (hands-on testing is still pending):
+
+| | Gemini Notebook | Learnin |
+|---|---|---|
+| Layout | Sources · Chat · Studio | Sources · Chat · Viewer/Study/Notes (same idea, borrowed on purpose) |
+| Citation click | Jumps to the **extracted text** | Jumps to the **original page / video moment**, highlighted |
+| Scanned PDFs, tables, math, figures | Reported weak spots | Read with vision at ingestion, math kept as LaTeX, figures searchable as images |
+| Videos | YouTube via captions only | Your own recordings, transcript files, YouTube; keyframes from slides |
+| Numbers in tables | Reported comparison errors | Tutor computes with a code tool instead of guessing |
+| Outside knowledge | Mostly avoided, not labelled | Clearly labelled "Background knowledge" |
+| Model | One model (Gemini 3.5) | Three tutors, routed by difficulty, to keep cost down |
+| Long context vs search | Likely a hidden mix | Both, and **it tells you which one it used** |
+| Usage limits | Opaque compute budget | Your own budget, visible |
+| Podcast-style audio overviews | Signature feature | Maybe later (open question) |
 
 ## What runs where
 
