@@ -78,7 +78,11 @@ Personal phase: set `ALLOWED_EMAILS` (comma-separated) in `env.production.vars` 
 | `CLOUDFLARE_ACCOUNT_ID` | your account id |
 | `NEON_DATABASE_URL` | Neon **direct** connection string |
 
-- Create a GitHub **environment** named `production`. Optionally add yourself as a required reviewer for deploys.
+- Create a GitHub **environment** named `production`, then:
+  - Set *Deployment branches* to **`main` only**.
+  - Add yourself as a **required reviewer**.
+  - Store the three secrets above as **environment secrets** (not repository secrets), so only approved `production` jobs can read them.
+  - The deploy workflow also refuses anything other than a green `push` CI run of this repository's `main`.
 - Enable **branch protection** on `main`: require the `CI` checks and linear history (ADR-0003).
 
 ## 5. Routine deploy
