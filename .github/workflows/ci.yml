@@ -90,7 +90,8 @@ jobs:
         run: printf 'BETTER_AUTH_SECRET=%s\n' "$(openssl rand -base64 32)" > apps/api/.dev.vars
       - name: Start API (wrangler dev) and web (vite)
         run: |
-          (cd apps/api && npx wrangler dev --port 8787 > ../../api.log 2>&1 &)
+          # Use the package's dev script: wrangler refuses to start until apps/web/dist exists.
+          (pnpm --filter @doubtless/api dev > api.log 2>&1 &)
           (cd apps/web && npx vite --port 5173 --strictPort > ../../web.log 2>&1 &)
           npx --yes wait-on@9.5.1 -t 120000 http-get://localhost:8787/v1/health http-get://localhost:5173
       - run: pnpm --filter @doubtless/web e2e e2e/screenshots
