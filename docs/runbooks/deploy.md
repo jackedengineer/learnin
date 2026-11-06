@@ -4,6 +4,8 @@ Production deploys run from `main` through [.github/workflows/deploy.yml](../../
 
 Region: **Singapore** for everything stateful (ARCHITECTURE §12.1).
 
+**Until production is provisioned, deploys are switched off.** After each green CI run on `main`, the Deploy workflow's preflight sees the placeholder Hyperdrive id and skips with a notice: the run is green and nothing is deployed. A manual run fails instead, because it's an explicit request to deploy. Committing the real id (step 2) turns deploys on, so **commit it last**, after everything else in this runbook is done. From then on a missing secret fails the run with a message naming it.
+
 ## 1. Neon (Postgres)
 
 1. Create the project **`doubtless`** in **AWS Asia Pacific (Singapore) `ap-southeast-1`**, Postgres 16+.
@@ -24,7 +26,7 @@ npx wrangler r2 bucket create doubtless-uploads --location apac
 npx wrangler hyperdrive create doubtless-neon --connection-string="<NEON DIRECT URL>"
 ```
 
-Put the returned Hyperdrive **id** into `apps/api/wrangler.jsonc` → `env.production.hyperdrive[0].id`. It isn't secret, so commit it. The deploy workflow refuses the all-zero placeholder.
+Put the returned Hyperdrive **id** into `apps/api/wrangler.jsonc` → `env.production.hyperdrive[0].id`. It isn't secret. Leave the top-level all-zero id alone, because that block is local dev only. Committing this id is what turns deploys on, so do it last.
 
 R2 presigned uploads need an S3 API token:
 1. In the dashboard, go to R2 → Manage API tokens.
@@ -57,7 +59,7 @@ npx wrangler secret put R2_ACCESS_KEY_ID --env production
 npx wrangler secret put R2_SECRET_ACCESS_KEY --env production
 ```
 
-Custom domain: attach `doubtless.app` to the `doubtless-api` Worker (Workers → Settings → Domains & Routes). If you use a different domain, update `BETTER_AUTH_URL` and `TRUSTED_ORIGINS` under `env.production.vars`.
+Custom domain: attach your domain to the `doubtless-api` Worker (Workers → Settings → Domains & Routes). Set `BETTER_AUTH_URL` and `TRUSTED_ORIGINS` under `env.production.vars` to that domain. The committed `https://doubtless.app` is a placeholder until the domain is bought. The post-deploy health check reads `BETTER_AUTH_URL`, so it follows this setting.
 
 ## 3. Google OAuth (Google Cloud Console)
 
@@ -88,10 +90,15 @@ Personal phase: set `ALLOWED_EMAILS` (comma-separated) in `env.production.vars` 
 ## 5. Routine deploy
 
 Merge to `main` → CI passes → the Deploy workflow runs these steps in order:
-1. Build the web assets.
-2. Apply the migrations (expand-only).
-3. `wrangler deploy --env production`.
-4. Health check `GET /v1/health?deep=1`.
+1. Preflight: confirm production is provisioned, otherwise skip (see the top of this runbook).
+2. Check that the deploy secrets are set.
+3. Build the web assets.
+4. Validate the Worker bundle with a dry run, so a broken build can't reach the database.
+5. Apply the migrations (expand-only).
+6. `wrangler deploy --env production`.
+7. Health check `GET /v1/health?deep=1` on the production URL, with retries.
+
+CI also runs the production dry run on every PR, so a broken bundle or config shows up before merging.
 
 ## Break-glass
 

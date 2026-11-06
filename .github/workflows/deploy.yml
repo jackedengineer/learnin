@@ -1,5 +1,6 @@
 # Production deploy: main → migrate Neon → wrangler deploy (ARCHITECTURE §12).
-# Requires repo secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, NEON_DATABASE_URL (direct, not pooled).
+# Requires `production` environment secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+# NEON_DATABASE_URL (direct, not pooled). Setup: docs/runbooks/deploy.md.
 name: Deploy
 
 on:
@@ -17,7 +18,8 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
+  preflight:
+    name: Production preflight
     # Only deploy reviewed code from THIS repository's main branch:
     # - workflow_run: the CI run must be a `push` (not a PR — a fork can name its branch
     #   "main"), from this repo, on main, and green.
@@ -32,9 +34,46 @@ jobs:
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+      url: ${{ steps.check.outputs.url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22 }
+      # Until production is provisioned this skips the deploy with a notice. A manual run
+      # is an explicit request to deploy, so it fails instead.
+      - id: check
+        run: node .github/scripts/production-preflight.mjs
+        env:
+          REQUIRE_READY: ${{ github.event_name == 'workflow_dispatch' }}
+
+  deploy:
+    name: Deploy to production
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
     steps:
+      - name: Require deploy secrets
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -n "$NEON_DATABASE_URL" ] || missing="$missing NEON_DATABASE_URL"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing production environment secrets:$missing (docs/runbooks/deploy.md)"
+            exit 1
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -44,13 +83,13 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       # --ignore-scripts: no dependency lifecycle scripts run with production secrets in scope.
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Refuse placeholder Hyperdrive id
-        run: |
-          if grep -q '"id": "00000000000000000000000000000000"' apps/api/wrangler.jsonc; then
-            echo "::error::Set the real Hyperdrive id in apps/api/wrangler.jsonc (docs/runbooks/deploy.md)"; exit 1
-          fi
+      # Through Turbo: the web build needs the API's generated types, built first by ^build.
       - name: Build web assets
-        run: pnpm --filter @doubtless/web build
+        run: pnpm turbo run build --filter=@doubtless/web
+      # Before migrating: a Worker that can't bundle must not change the database.
+      - name: Validate the Worker bundle (uploads nothing)
+        working-directory: apps/api
+        run: npx wrangler deploy --env production --dry-run --outdir "$RUNNER_TEMP/worker"
       - name: Apply database migrations (expand-only; ADR-0002)
         run: pnpm db:migrate
         env:
@@ -62,4 +101,6 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Post-deploy health check
-        run: curl -fsS "https://doubtless.app/v1/health?deep=1"
+        run: curl -fsS --retry 5 --retry-delay 10 --retry-all-errors "$PRODUCTION_URL/v1/health?deep=1"
+        env:
+          PRODUCTION_URL: ${{ needs.preflight.outputs.url }}
