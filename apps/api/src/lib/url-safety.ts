@@ -30,6 +30,15 @@ export function assertPublicHttpUrl(raw: string): URL {
   return url;
 }
 
+/** Video id for YouTube URLs, else null. */
+export function youTubeVideoId(url: URL): string | null {
+  if (!isYouTubeUrl(url)) return null;
+  const h = url.hostname.replace(/^www\.|^m\./, "");
+  if (h === "youtu.be") return url.pathname.slice(1).split("/")[0] || null;
+  if (url.pathname === "/watch") return url.searchParams.get("v");
+  return url.pathname.split("/")[2] || null;
+}
+
 export function isYouTubeUrl(url: URL): boolean {
   const h = url.hostname.replace(/^www\.|^m\./, "");
   if (h === "youtu.be") return url.pathname.length > 1;

@@ -407,6 +407,7 @@ describe("url and text sources", () => {
     });
     expect(await yt.json()).toMatchObject({
       kind: "youtube",
+      title: "YouTube video kCc8FmEb1nY",
       originUrl: "https://www.youtube.com/watch?v=kCc8FmEb1nY",
     });
     const web = await h.request(`/v1/notebooks/${nb.id}/sources`, {

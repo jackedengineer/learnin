@@ -15,7 +15,7 @@ import { createRouter, errorResponses } from "../lib/openapi.ts";
 import { ApiError, notFound } from "../lib/problem.ts";
 import { toSource } from "../lib/serialize.ts";
 import { kindForMime } from "../lib/storage.ts";
-import { assertPublicHttpUrl, isYouTubeUrl } from "../lib/url-safety.ts";
+import { assertPublicHttpUrl, isYouTubeUrl, youTubeVideoId } from "../lib/url-safety.ts";
 import { parseCursor } from "./notebooks.ts";
 
 const tags = ["Sources"];
@@ -94,8 +94,12 @@ const remove = createRoute({
   responses: { 204: { description: "Deleted" }, ...errorResponses },
 });
 
-const titleFromUrl = (u: URL) =>
-  `${u.hostname}${u.pathname === "/" ? "" : u.pathname}`.slice(0, 300);
+// Placeholder until ingestion fetches the real page/video title (Phase 1).
+const titleFromUrl = (u: URL) => {
+  const videoId = youTubeVideoId(u);
+  if (videoId) return `YouTube video ${videoId}`;
+  return `${u.hostname.replace(/^www\./, "")}${u.pathname === "/" ? "" : u.pathname}`.slice(0, 300);
+};
 
 export const sourcesRouter = createRouter()
   .openapi(listForNotebook, async (c) => {
