@@ -2,8 +2,20 @@
 
 > A personal, multimodal learning notebook. You bring sources, and it finds more on the web. You study, ask questions and get precise answers grounded in **your** material, with citations that jump to the exact page, timestamp or paragraph.
 
-Status: **v3 — stack finalized** · Last updated: 2026-11-06
-Plain-language companion: [OVERVIEW.md](./OVERVIEW.md) · Competitor teardown: [NotebookLM product teardown](../reports/NotebookLM%20product%20teardown.md)
+Status: **v3.1 — stack finalized, competitor baseline measured** · Last updated: 2026-11-06
+Plain-language companion: [OVERVIEW.md](./OVERVIEW.md) · Competitor: [hands-on results](./research/notebooklm-hands-on-results.md) (measured) and [desk teardown](../reports/NotebookLM%20product%20teardown.md) (background)
+
+**What changed in v3.1** (from hands-on testing of Gemini Notebook, 24-question protocol)
+- **Measured baseline to beat:** mean TTFT **19.7 s**, accuracy **95.8 %**, unsupported claims in **12.5 %** of responses, abstention 2/2. Our edge is **speed** (target < 2.5 s) and **precise citations**, without giving up accuracy (§1.2, §7).
+- **Citations at sentence level:** highlight Claude's `cited_text`, not the whole chunk. Their passages are ~600 chars, and our chunks would otherwise be coarser (§5.2).
+- **"Ready for chat" fast:** text-layer content indexed first (< 30 s for a 50-page PDF). Vision pages and the source guide fill in afterwards (§4.1, §4.6).
+- **Web import completeness check:** a visible "imported 40 % of this page" instead of silent truncation (§4.2).
+- **One conditional re-search round** on low coverage, plus **status events** in the stream (§5.4, §6.3).
+- **Lean stream:** passages stay out of the stream, and hover text is fetched on demand. They send ~13 MB per question (§6.3).
+- **"Estimate before generating" + "Generate later"** (via the Batch API) for study outputs. Study items are editable, each with an **Explain** button (§8.6, §10.2).
+- **Generated interactive HTML runs on a sandboxed origin** (§9).
+- **Kept, now with evidence:** video timestamps + player seek, keyframes, `.vtt`/`.srt` parsing, a visible full-context mode, the background-knowledge label. These are all confirmed gaps in the competitor.
+- **Demoted:** the code tool for numbers moves to the deep tier only, since the competitor got all its table arithmetic right.
 
 **What changed in v3** (decisions confirmed + learnings from the Gemini Notebook / NotebookLM teardown)
 - **Region: Singapore.** Neon in AWS `ap-southeast-1`. Qdrant Cloud in the same AWS region, with Workers placed next to them (§12.1).
@@ -76,7 +88,8 @@ Plain-language companion: [OVERVIEW.md](./OVERVIEW.md) · Competitor teardown: [
 |---|---|---|
 | Chat time-to-first-token (p95) | **< 2.5 s** (light/standard tiers), < 4 s (deep tier) | Stream retrieved sources to the UI before the first token |
 | Chat end-to-end (p95) | < 20 s | |
-| Ingestion: 50-page PDF | < 2 min to `ready` | Per-stage progress over WebSocket |
+| Ingestion: 50-page text PDF | **< 30 s to chat-ready** (text layer indexed). < 2 min to fully `ready` (vision pages + guide) | Competitor measured 4–20 s to ready. Per-stage progress over WebSocket |
+| **Competitor baseline** (measured) | TTFT 19.7 s mean · total 23.9 s · accuracy 95.8 % · unsupported 12.5 % of responses · abstention 2/2 | Beat on speed and citation precision. **Match or beat on accuracy and groundedness**, since that's the bar we must not trade away |
 | Ingestion: 1-hour video | < 10 min to `ready` | ASR dominates |
 | Groundedness | ≥ 95 % of claims supported by a cited chunk (LLM-judged) | The core product promise |
 | Retrieval recall@10 | ≥ 90 % on the golden set | |
@@ -345,6 +358,7 @@ IngestSource (Cloudflare Workflow, one instance per source × pipeline_version)
 
 Design rules:
 
+0. **Progressive readiness.** A source becomes **chat-ready** as soon as its text-layer content (or transcript) is chunked, embedded and indexed. Vision-transcribed pages, keyframes, contextual prefixes (re-embedded in place) and the source guide continue in later steps, and the UI shows "Ready, still reading 12 scanned pages". Never block chat on the slow parts.
 1. **Step outputs live in R2.** Steps return small JSON (keys, counts), not payloads, which keeps you well under Workflows' state limits. A retry re-reads the artifact. You never re-transcribe a 2-hour video because embedding failed.
 2. **Per-step retry policy:** `retries: { limit, delay, backoff: 'exponential' }` with a timeout. Throw `NonRetryableError` for corrupt input or unsupported formats, so the source fails fast with a readable reason.
 3. **Partial success is a state.** 3 unreadable pages out of 300 → `partial`, with the bad pages listed.
@@ -373,7 +387,7 @@ type ExtractedDoc = {
 | **Video file** | ffmpeg: audio track + scene-detected keyframes (`select='gt(scene,0.3)'`), deduped by perceptual hash. Audio → ASR with timestamps. Frames → Haiku captions + multimodal embedding, aligned to transcript time | **Container** + Worker |
 | **Audio** | Split into ~10-min segments → Whisper (Workers AI), offsets re-based to source time | Container (split) + Workers AI |
 | **Transcript file** (`.vtt` / `.srt` / timestamped `.txt`) | Parse cues → `transcript_segment` blocks with `startMs`/`endMs`. No ASR needed. If the user links a video (upload or URL), citations seek that player. If not, citations show the timestamp and quote | Worker |
-| **Web / blog** | Fetch → Readability (`linkedom`) → Markdown (`turndown`), keeping heading hierarchy. JS-rendered pages → **Browser Rendering** | Worker |
+| **Web / blog** | Fetch → strip embedded data blobs (inline JSON, chart data, base64) → Readability (`linkedom`) → Markdown (`turndown`), keeping heading hierarchy. JS-rendered pages → **Browser Rendering**. **Completeness check:** compare the extracted text length and last heading against the page's visible text and heading outline. If coverage is < 90 %, mark the source `partial` with a visible "Imported ~40 % of this page" and a retry-with-browser action (the competitor silently truncated a 9 MB page) | Worker |
 | **DOCX / text / MD** | `mammoth` / `remark` → Markdown | Worker |
 
 Short clips (< 100 MB, < 10 min) can use **Media Transformations** for frame and audio extraction without the container. Lecture-length video exceeds those limits, so the container is the default path.
@@ -458,9 +472,14 @@ POST /collections/chunks/points/query
 //                 { "key": "level", "match": { "value": 1 } } ] }
 ```
 
-### 5.2 Citations: native, not prompt-engineered
+### 5.2 Citations: native, not prompt-engineered, and sentence-level
 
 Each context unit goes to Claude as a **`document` block with `citations: {enabled: true}`**, titled with source + locator. The response carries `citations` with `cited_text` and a document index. The server maps `document_index → chunk_id → locator`, and the client gets ready-to-use deep links. Citations are incompatible with structured-output mode, so use structured outputs only on the non-chat paths (routing, discovery scoring, flashcards).
+
+**Granularity matters more than it looks.** The competitor highlights ~600-char passages, and our chunks are 400–700 *tokens* (2–4× larger). Highlighting the whole chunk would make us coarser. So:
+- Send each chunk as a **plain-text document**. The API sentence-splits it and returns `char_location` citations, so `cited_text` is one or a few sentences.
+- Store the chunk's **char offset within its page/segment**. The server converts `(chunk, start_char, end_char)` → page + text range (PDF), → `startMs`/`endMs` of the covering transcript segment (video/audio), or → a `#:~:text=` fragment (web).
+- The viewer highlights **exactly the cited sentences**. For scanned or vision-transcribed pages, where there are no coordinates, highlight the transcribed text in the side-by-side view and outline the page region when the vision pass returned a bbox.
 
 ### 5.3 Prompt shape
 
@@ -478,7 +497,7 @@ user: [document blocks] [image blocks] Focus: "Lecture 3 @ 14:32" Question: {sta
 
 ### 5.4 Fixed pipeline vs. agentic RAG
 
-Ship the **fixed pipeline** (one retrieval pass, then answer). Add an **agentic "deep answer"** mode later: Opus with `search_notebook`, `open_source_section` and `web_search` tools in a loop, behind an explicit toggle, once evals show it helps on multi-hop questions.
+Ship the **fixed pipeline** (one retrieval pass, then answer) with **one conditional re-search round**: if reranking flags `lowCoverage`, Haiku proposes 1–2 alternative queries (synonyms, the likely section name, a sub-question) and retrieval runs once more before generation. This costs ~0.5 s and only happens on the slow path. The competitor's best answer in testing (it noticed a truncated source instead of guessing) came from searching again. But its always-on agentic loop is why its mean TTFT is ~20 s, so we don't copy that. Add an **agentic "deep answer"** mode later: Opus with `search_notebook`, `open_source_section` and `web_search` tools in a loop, behind an explicit toggle, once evals show it helps on multi-hop questions.
 
 ### 5.5 Personalization
 
@@ -511,7 +530,7 @@ The teardown's reported failure modes were overstated interpretations, quotes re
 
 | Failure mode | Countermeasure |
 |---|---|
-| Numeric comparisons / table math | Standard and deep tiers get Claude's **code execution** tool when the question involves numbers from tables. The model computes instead of eyeballing |
+| Numeric comparisons / table math | **Deep tier only** gets Claude's **code execution** tool when the question involves multi-step numbers from tables. (Demoted: the competitor got all three table and arithmetic questions right without it. Re-evaluate with our own evals) |
 | Interpretive overconfidence / attribution loss | Prompt rule: keep attributions ("the authors argue…"), and mark inference explicitly. The groundedness judge (§7) checks exactly this |
 | Outside knowledge creeping in | Anything not from a cited source is rendered under a **"Background knowledge"** label, separate from sourced content. Measured by abstention evals |
 | Scans, tables, math, figures | Vision page routing + LaTeX/GFM transcription at ingestion (§4.2). Figures get captions and image vectors |
@@ -554,6 +573,7 @@ Sources                   POST   /v1/notebooks/:id/sources   body: {type:'upload
                           POST   /v1/sources/:id/retry
                           DELETE /v1/sources/:id
                           GET    /v1/sources/:id/asset?locator=…  → short-lived signed R2 URL
+                          GET    /v1/chunks/:id                   → full passage text + locator (hover preview)
 
 Discovery                 POST   /v1/notebooks/:id/discover  → 202 {workflowId}
                           GET    /v1/notebooks/:id/suggestions
@@ -577,6 +597,7 @@ Conventions: uploads go **directly to R2** with presigned URLs. `Idempotency-Key
 
 ```
 event: message.created      data: {"messageId":"…"}
+event: status               data: {"stage":"searching"}          // searching | reading | re-searching | writing
 event: route                data: {"tier":"standard","model":"claude-sonnet-5-5"}
 event: retrieval.completed  data: {"sources":[{chunkId, sourceId, title, locator, snippet}], "lowCoverage":false}
 event: text.delta           data: {"text":"The scaling factor…"}
@@ -584,6 +605,8 @@ event: citation             data: {"index":1, "chunkId":"…", "citedText":"…"
 event: message.completed    data: {"usage":{…}, "costUsd":0.021, "latencyMs":5200}
 event: error                data: {"code":"llm.overloaded", "retryable":true}
 ```
+
+**Keep the stream lean.** Events are **deltas only**. `retrieval.completed` carries ids, titles, locators and ≤ 200-char snippets, never full passages. Hover previews fetch the full passage on demand (`GET /v1/chunks/:id`, cached by TanStack Query). The competitor resends the full answer state *with all passages* on every frame, ~13 MB decoded per question, which mobile data plans would notice. Target: < 50 KB per answer on the wire.
 
 Web: `fetch` + stream reader. Mobile: **`expo/fetch`** (supports streaming bodies). One parser in `packages/api-client`. If the client disconnects, generation still completes (`ctx.waitUntil`) and is persisted.
 
@@ -594,7 +617,10 @@ Web: `fetch` + stream reader. Mobile: **`expo/fetch`** (supports streaming bodie
 - **Golden set v0** in week 1: 30–50 questions over 3–5 real notebooks, with labelled relevant chunks and key facts, and **10–15 % unanswerable**.
 - **Retrieval metrics:** recall@k, MRR, nDCG@10. Deterministic, run on every chunking, embedding, fusion or rerank change.
 - **Generation metrics:** groundedness (claim-level LLM judge), citation precision, correctness vs. key facts, abstention accuracy.
-- **Competitor-comparable metrics:** report the **response-level unsupported-claim rate** (share of answers with ≥ 1 unsupported claim) alongside claim-level groundedness. The only published grounded-QA figure for NotebookLM is ~13 % of responses (small newsroom study, 2025), plus ~95 % correct passage location in a medical study. Those are the bars to beat. The hands-on protocol in [docs/research/notebooklm-hands-on-test.md](./research/notebooklm-hands-on-test.md) measures both products on the same 24 questions.
+- **Competitor-comparable metrics:** report the **response-level unsupported-claim rate** (share of answers with ≥ 1 unsupported claim) alongside claim-level groundedness.
+- **Golden set v0 already exists:** [`evals/golden/v0.questions.json`](../evals/golden/v0.questions.json) (24 questions, written before answering) with Gemini Notebook's scores in [`v0.notebooklm-baseline.json`](../evals/golden/v0.notebooklm-baseline.json): TTFT 19.7 s mean, accuracy 95.8 %, unsupported 12.5 %, abstention 2/2. This is one rater and one sitting, so treat it as directional.
+  - **Learnin v1 ship gate:** accuracy ≥ 95 %, unsupported ≤ 12.5 %, abstention 2/2, video questions answered *with* timestamps, p95 TTFT < 2.5 s.
+  - Add **truncation tests** (the answer lies past where a naïve import would cut) and **timestamp tests** to v1 of the set.
 - **Router metrics (new):** per-tier quality on the golden set, plus **routing accuracy**. Hand-label the "right" tier for ~50 questions, then track how often light-tier answers fail groundedness compared with what the deep tier would have produced (§8.4).
 - **CI:** each PR gets a **Neon branch** and a fresh **Qdrant collection** (`chunks_pr_<n>`) seeded from a fixture corpus. Retrieval evals run on every PR, LLM-judged evals nightly or on label. Block merges on > 2-point regressions.
 - **Online signals:** 👍/👎 with reasons, citation clicks, regenerate rate, "explain again" escalations, low-coverage rate per notebook.
@@ -710,6 +736,8 @@ Still deliberately **not** cached: final answers.
 
 ### 8.6 Spend guardrails
 
+**Before generating:** every study-output dialog (flashcards, quiz, study guide…) shows an **estimated cost in dollars** (from token estimates of the selected sources) and today's remaining budget. Two buttons: **Generate now** and **Generate later**. "Later" jobs go through the **Message Batches API** (≈ 50 % cheaper, results within hours) and notify you when ready. The competitor shows a usage bar but no real numbers. We show the dollars.
+
 The `UserBudget` Durable Object holds a per-user daily $ counter. `packages/ai` reserves an estimate before each call and settles the actual cost after, and the DO's strong consistency makes this race-free. AI Gateway rate limits act as the coarse backstop. Per-source caps cover max pages and max video length. Alert at 80 % of the monthly budget.
 
 ---
@@ -723,6 +751,7 @@ The `UserBudget` Durable Object holds a per-user daily $ counter. `packages/ai` 
 | Prompt injection inside sources | Sources only enter as `document` blocks. The system prompt says document content is data. The answer path has **no side-effecting tools**. Web content is labelled. Discovery requires approval |
 | Malicious uploads | Mime allow-list + magic bytes, size caps, decompression-bomb limits. Process media in the container with timeouts and memory caps |
 | Leaked file URLs | Private R2 bucket. ≤ 5-min signed GETs per object |
+| Generated HTML (interactive reports, future mini-apps) | Render only in a sandboxed `<iframe sandbox="allow-scripts">` served from a **separate origin** (e.g. `usercontent.learnin.app`) with a strict CSP and no cookies. Never on the app origin. The competitor does the same with `*.usercontent.goog` |
 | Secrets | `wrangler secret` / Secrets Store. Qdrant API key scoped to the collection. Mobile tokens in `expo-secure-store` |
 | Webhook spoofing (ASR callbacks) | HMAC signature + workflow-id binding. Reject unknown or replayed ids |
 | Runaway cost | `UserBudget` DO + AI Gateway rate limits + per-route Workers Rate Limiting |
@@ -741,7 +770,12 @@ The `UserBudget` Durable Object holds a per-user daily $ counter. `packages/ai` 
 - Vite + React 19 + TanStack Router + TanStack Query. Tailwind + shadcn/ui. Deployed as **Workers static assets**, same origin as the API (no CORS).
 - Three-pane notebook: **sources (with scope checkboxes + source guides) | chat | right pane with tabs: Viewer · Study · Notes**. Citation hover → quote preview. Click → viewer at the exact page/bbox, video timestamp or paragraph, showing the **original rendering** (with a toggle to the extracted text).
 - **Notes:** save any answer to notes with its citations intact. Notes are editable and can be added back as a source.
-- **Notebook organization:** tags and pinning from day 1 (a top complaint about the competitor is no folders).
+- **Notebook organization:** tags and pinning from day 1 (the competitor has just added Collections).
+- **Study items** (flashcards, quiz questions) are **editable** (add, edit, delete), and each has an **Explain** button that opens a cited chat answer. The competitor's study items are editable too but have no per-item citations and no spaced repetition. Our edge is per-item citations + FSRS scheduling.
+- **Pasted text is a source** (kind `text`), cited like any other. **Notes** are separate, don't count toward limits, and can be explicitly "added as a source".
+- **Multiple conversations per notebook** (the competitor has a single thread per notebook).
+- **Suggested follow-ups** render as tappable chips *below* the answer, generated by Haiku in parallel after the answer finishes, not appended to the answer text. They can be turned off in settings. A/B test whether they help.
+- **Hidden state is visible:** if any sources are deselected, the composer shows "Answering from 4 of 6 sources" (the competitor's small counter was easy to miss).
 - `react-pdf` with bbox highlight, YouTube IFrame API / HTML5 video, sanitized reader view.
 - `react-markdown` + `remark-math` + `rehype-katex` + code highlighting.
 - A **Quick / Auto / Deep** toggle in the composer maps to the router's `mode`.
@@ -854,6 +888,8 @@ Resolved:
 
 Open:
 1. **Qdrant free tier in Singapore?** Check the cluster-create dropdown (2 minutes). See the fallback in §12.1.
-2. **Hands-on baseline:** run [the comparison protocol](./research/notebooklm-hands-on-test.md) against Gemini Notebook on a signed-in browser, so v1 has real numbers to beat.
-3. **Just you, or friends too?** That decides when Phase 6 hardening is worth it.
-4. **Audio overviews** (podcast-style summaries) are the competitor's signature feature. In scope for Phase 5+ (Claude script → TTS), or skipped for a learning-first product?
+2. **Just you, or friends too?** That decides when Phase 6 hardening is worth it.
+3. **Audio overviews** (podcast-style summaries) are the competitor's signature feature. In scope for Phase 5+ (Claude script → TTS), or skipped for a learning-first product?
+
+Resolved from hands-on testing:
+- Competitor baseline measured (§7). A **textbook catalogue** is out of v1 (licensing work, little learning value). Suggested follow-ups ship as optional chips, to be A/B tested (§10.2).

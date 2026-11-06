@@ -76,6 +76,7 @@ You're at **14:32** of the lecture and confused. You type: *"Why does he say we 
 | 2. Search | Qdrant runs a **meaning search** and a **keyword search** together and merges them into ~50 candidates. Passages around 14:32 in the lecture are always included | ~0.1 s |
 | 3. Double-check | Candidates are fetched from Postgres (the source of truth); anything stale is dropped | ~0.01 s |
 | 4. Rerank | The judge keeps the best ~10 passages | ~0.3 s |
+| 4b. (Only if needed) | If the passages look thin, search once more with reworded queries (status: "searching again…") | +~0.5 s |
 | 5. Show sources | Your screen immediately shows **"Using: Lecture 3 (14:05–15:40), Paper §3.5, Blog post 'Positional encoding explained'"** | at ~0.8 s |
 | 6. Pick a tutor | Conceptual question, several sources → **Sonnet** (everyday tutor) | instant |
 | 7. Answer | Sonnet streams an explanation at your level: intuition first, then the formula, then an example. Every claim carries a **numbered citation** | first words at ~1.5–2.5 s |
@@ -88,7 +89,7 @@ You're at **14:32** of the lecture and confused. You type: *"Why does he say we 
 ### Journey 5: Tapping a citation
 
 - **[1] → Lecture 3, 14:47**: the video player opens and **jumps to 14:47**.
-- **[2] → Paper, page 6**: the PDF opens on page 6 with **the exact sentence highlighted**.
+- **[2] → Paper, page 6**: the PDF opens on page 6 with **the exact sentence highlighted**, not a whole paragraph.
 - **[3] → Blog post**: the page opens scrolled to the quoted paragraph.
 
 This is the trust loop. You can always check the tutor against the original.
@@ -121,20 +122,22 @@ From any notebook: **flashcards** and **quizzes** generated from your sources (e
 
 ## How this compares to Gemini Notebook (formerly NotebookLM)
 
-From the [teardown report](../reports/NotebookLM%20product%20teardown.md), based on public sources (hands-on testing is still pending):
+Measured hands-on on 2026-11-06, with 24 questions on the same 6 sources ([full results](./research/notebooklm-hands-on-results.md)):
 
-| | Gemini Notebook | Learnin |
+| | Gemini Notebook (measured) | Learnin (target) |
 |---|---|---|
-| Layout | Sources · Chat · Studio | Sources · Chat · Viewer/Study/Notes (same idea, borrowed on purpose) |
-| Citation click | Jumps to the **extracted text** | Jumps to the **original page / video moment**, highlighted |
-| Scanned PDFs, tables, math, figures | Reported weak spots | Read with vision at ingestion, math kept as LaTeX, figures searchable as images |
-| Videos | YouTube via captions only | Your own recordings, transcript files, YouTube; keyframes from slides |
-| Numbers in tables | Reported comparison errors | Tutor computes with a code tool instead of guessing |
-| Outside knowledge | Mostly avoided, not labelled | Clearly labelled "Background knowledge" |
-| Model | One model (Gemini 3.5) | Three tutors, routed by difficulty, to keep cost down |
-| Long context vs search | Likely a hidden mix | Both, and **it tells you which one it used** |
-| Usage limits | Opaque compute budget | Your own budget, visible |
-| Podcast-style audio overviews | Signature feature | Maybe later (open question) |
+| **Time to first word** | **~20 s on average** (12–53 s). It searches and "thinks" in several rounds | **Under 2.5 s.** One search pass, plus one extra round only when coverage looks thin |
+| Accuracy | Very good: 23 of 24 correct or nearly so; 3 of 24 answers added a claim the sources don't support | At least as good. This is the bar we must not trade away for speed |
+| Saying "not in your sources" | Correct 2/2, no false refusals | Same, plus a clear "Background knowledge" label for anything outside your sources |
+| Scanned PDFs, tables, figures | **Handled well** (better than the online reviews said) | Also handled (vision at ingestion), so not a differentiator |
+| Where a citation lands | ~600-char passage in text PDFs; **top of the source** for scans; **the whole transcript** for YouTube | **The exact sentence**, on the original page, or **the exact moment** in the video |
+| Video | Audio only, **no timestamps**; `.vtt` and `.srt` files rejected | Timestamps on everything, slides from keyframes, transcript files accepted |
+| Web pages | A big page was **cut off silently** | "Imported 40 % of this page" warning and a retry |
+| Data per question | ~13 MB (resends everything on every update) | Under 50 KB |
+| Cost visibility | Usage bar, no numbers | Real dollar estimate before generating, plus "Generate later" at half price |
+| Study tools | Flashcards and quizzes, editable, no per-card source | Editable, **each card linked to its source**, spaced-repetition scheduling |
+| Conversations | One thread per notebook | Many conversations per notebook |
+| Podcast-style audio overviews | Signature feature (~3 min to make 1.5 min of audio) | Maybe later (open question) |
 
 ## What runs where
 
