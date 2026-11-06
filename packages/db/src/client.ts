@@ -9,7 +9,12 @@ export type Database = ReturnType<typeof createDb>["db"];
  * `fetch_types: false` skips a round trip on connect; we use no custom types.
  */
 export function createDb(url: string, opts: { max?: number } = {}) {
-  const sql = postgres(url, { max: opts.max ?? 5, fetch_types: false, prepare: true });
+  const sql = postgres(url, {
+    max: opts.max ?? 5,
+    fetch_types: false,
+    prepare: true,
+    onnotice: () => {},
+  });
   const db = drizzle(sql, { schema });
   return { db, close: () => sql.end({ timeout: 5 }) };
 }

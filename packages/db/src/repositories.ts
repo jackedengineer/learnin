@@ -162,7 +162,7 @@ export const uploadRepo = {
     db: Database,
     userId: string,
     id: string,
-    facts: { byteSize: number; detectedMime: string; sha256: string },
+    facts: { byteSize: number; detectedMime: string; sha256: string | null },
   ): Promise<Upload | null> {
     const [row] = await db
       .update(uploads)

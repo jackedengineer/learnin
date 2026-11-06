@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "doubtless-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "traces": { "enabled": true, "head_sampling_rate": 1 }
+  },
+  // Run next to Neon + Qdrant (Singapore), not next to the user (ARCHITECTURE §12.1).
+  "placement": { "mode": "smart" },
+  // The web SPA is served from the same origin; /v1/* always hits the Worker.
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/v1/*"]
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      // Replaced with the real Hyperdrive id at deploy time (docs/runbooks/deploy.md).
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgres://doubtless:doubtless@localhost:5432/doubtless"
+    }
+  ],
+  "r2_buckets": [{ "binding": "UPLOADS", "bucket_name": "doubtless-uploads" }],
+  "vars": {
+    "ENVIRONMENT": "development",
+    "BETTER_AUTH_URL": "http://localhost:5173",
+    "TRUSTED_ORIGINS": "http://localhost:5173,http://localhost:8787",
+    "UPLOAD_MODE": "worker",
+    "ALLOW_DEV_LOGIN": "true",
+    "ALLOWED_EMAILS": ""
+  },
+  "env": {
+    "production": {
+      "name": "doubtless-api",
+      "placement": { "mode": "smart" },
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000000000000000000000000000" }],
+      "r2_buckets": [{ "binding": "UPLOADS", "bucket_name": "doubtless-uploads" }],
+      "vars": {
+        "ENVIRONMENT": "production",
+        "BETTER_AUTH_URL": "https://doubtless.app",
+        "TRUSTED_ORIGINS": "https://doubtless.app",
+        "UPLOAD_MODE": "presigned",
+        "ALLOW_DEV_LOGIN": "false",
+        "ALLOWED_EMAILS": ""
+      }
+    }
+  }
+}
