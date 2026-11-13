@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@doubtless/schemas": "workspace:*",
-    "hono": "4.13.16"
+    "hono": "4.13.17"
   },
   "devDependencies": {
     "@doubtless/api": "workspace:*",
