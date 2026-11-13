@@ -19,15 +19,15 @@
     "@doubtless/schemas": "workspace:*",
     "@hono/zod-openapi": "1.6.3",
     "aws4fetch": "1.0.20",
-    "better-auth": "1.7.18",
+    "better-auth": "1.7.19",
     "drizzle-orm": "0.45.4",
-    "hono": "4.13.16",
+    "hono": "4.13.17",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
     "typescript": "~6.0.3",
     "vitest": "5.1.0",
-    "wrangler": "4.158.0"
+    "wrangler": "4.159.0"
   }
 }
